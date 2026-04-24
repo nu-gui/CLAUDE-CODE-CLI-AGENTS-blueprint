@@ -241,31 +241,9 @@ If you're using the assisted Quickstart prompt from the README, Claude Code runs
 
 ## Respect existing `~/.claude` state
 
-If you already have a working Claude Code setup and are ONLY adopting parts of this blueprint, merge carefully:
+If you already have a working Claude Code setup and are ONLY adopting parts of this blueprint, the canonical merge policy — never-overwrite / merge-only / safe-to-replace lists, plus the mandatory backup command and rollback steps — lives in [`docs/existing-state-merge.md`](docs/existing-state-merge.md). Read it before touching anything.
 
-**Never overwrite:**
-- `settings.json`, `.env`, `.credentials.json`
-- `context/hive/sessions/` (active sessions)
-- `context/hive/events.ndjson` (audit trail)
-- `projects/`, `history.jsonl`
-- `memory/MEMORY.md` (persistent agent memory)
-
-**Merge (only add missing files):**
-- `context/shared/patterns/`, `context/shared/lessons/`, `context/shared/decisions/` — your team's knowledge; on filename collision, KEEP YOURS
-
-**Safe to replace (but back up first):**
-- `agents/`, `handbook/`, `protocols/`, `hooks/`, `scripts/` — framework internals
-
-Before replacing anything:
-
-```bash
-BACKUP_DIR=~/.claude-pre-blueprint-$(date +%Y%m%d-%H%M%S)
-mkdir -p "$BACKUP_DIR"
-cp -r ~/.claude "$BACKUP_DIR/"
-echo "backup: $BACKUP_DIR"
-```
-
-If you notice machine-specific tuning in the backup (custom hook paths, tool allowlists that matter to you, cron tuning) — port it into the new blueprint before you commit.
+The same policy is enforced by the assisted Quickstart (README §"Quickstart — assisted"). If you adopt manually rather than via the assisted prompt, apply it yourself with the same discipline.
 
 ---
 
