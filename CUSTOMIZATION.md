@@ -166,6 +166,109 @@ You should see Claude route to `api-core`, which should produce a PR against you
 
 If Claude doesn't route to the specialist correctly, check the triggers table in `CLAUDE.md` and adjust wording to match how your team phrases work.
 
+## Email delivery options (morning digest)
+
+The `morning-digest.sh` script is always happy to write local markdown — by default it drops a file at `${HOME}/.claude/logs/morning-digest-YYYYMMDD.md` and nothing else happens. If you want email delivery too, pick ONE of the three paths and populate the matching env vars in `.env`:
+
+### Option A — Gmail OAuth (creates a Gmail *draft* you review before sending)
+
+Requires a one-time Google Cloud Console setup:
+
+1. Visit [console.cloud.google.com](https://console.cloud.google.com/), create a project, enable the Gmail API.
+2. Configure the **OAuth consent screen** (external / single-user is fine).
+3. Create an **OAuth 2.0 Client ID** of type "Desktop app". Download the credentials JSON.
+4. Place it at `${HOME}/.config/morning-digest-gmail/credentials.json`.
+5. If your blueprint fork ships `scripts/setup-gmail-draft-oauth.sh`, run it — it creates a dedicated venv and walks you through the first-run OAuth token exchange.
+
+In `.env`:
+
+```
+GMAIL_OAUTH_CREDENTIALS_PATH=${HOME}/.config/morning-digest-gmail/credentials.json
+DIGEST_RECIPIENT_EMAIL=your-email@example.com
+```
+
+Known limitation: the OAuth consent screen is operator-gated and cannot be automated — you click through it once. Everything after that is automatic.
+
+### Option B — SMTP (send directly via any provider)
+
+Works with Gmail (with an [app password](https://myaccount.google.com/apppasswords)), Mailgun, AWS SES, Postmark, your company's SMTP, etc.
+
+```
+sudo apt install msmtp         # or ssmtp, whichever you prefer
+```
+
+In `.env`:
+
+```
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=digest-bot@example.com
+SMTP_PASS=your-app-password
+DIGEST_RECIPIENT_EMAIL=your-email@example.com
+```
+
+`.env` is gitignored so the app password stays local. For extra safety, set `SMTP_PASS` via your OS keyring and reference it from the shell profile instead of the `.env` file.
+
+### Option C — GitHub Discussion
+
+Post the digest as a comment in a Discussion on one of your repos. Requires the target repo to have **Discussions** enabled (Settings → Features → Discussions).
+
+```
+DIGEST_TARGET_REPO=${GITHUB_ORG}/your-ops-repo
+```
+
+### Option D — None (default)
+
+Leave all the above env vars unset. The digest lives only as local markdown under `${HOME}/.claude/logs/`.
+
+---
+
+## Environment discovery (before you customize)
+
+If you're using the assisted Quickstart prompt from the README, Claude Code runs this automatically in Step 2. If you're doing it manually, check these before filling in configs — they influence some of the choices.
+
+| Check | Why |
+|---|---|
+| Is `~/.claude` already populated? | You may be joining an existing setup; don't overwrite session memory |
+| `gh auth status` | The automation scripts use `gh` extensively — ensure it's authenticated |
+| `python3 --version` + `python3 -m venv --help` | Gmail OAuth path needs a venv (PEP 668 on Ubuntu 24.04+) |
+| `systemctl --user list-timers` | If timers are already running, the bootstrap will conflict unless you stop them first |
+| `crontab -l` | Same concern — cron entries from a previous setup may double-up |
+| OS + `bash --version` | Scripts assume bash 5+; macOS default is 3.2 (install via brew) |
+| Any existing `context/shared/patterns/ lessons/ decisions/` | These are your team's accumulated knowledge — preserve them |
+
+---
+
+## Respect existing `~/.claude` state
+
+If you already have a working Claude Code setup and are ONLY adopting parts of this blueprint, merge carefully:
+
+**Never overwrite:**
+- `settings.json`, `.env`, `.credentials.json`
+- `context/hive/sessions/` (active sessions)
+- `context/hive/events.ndjson` (audit trail)
+- `projects/`, `history.jsonl`
+- `memory/MEMORY.md` (persistent agent memory)
+
+**Merge (only add missing files):**
+- `context/shared/patterns/`, `context/shared/lessons/`, `context/shared/decisions/` — your team's knowledge; on filename collision, KEEP YOURS
+
+**Safe to replace (but back up first):**
+- `agents/`, `handbook/`, `protocols/`, `hooks/`, `scripts/` — framework internals
+
+Before replacing anything:
+
+```bash
+BACKUP_DIR=~/.claude-pre-blueprint-$(date +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP_DIR"
+cp -r ~/.claude "$BACKUP_DIR/"
+echo "backup: $BACKUP_DIR"
+```
+
+If you notice machine-specific tuning in the backup (custom hook paths, tool allowlists that matter to you, cron tuning) — port it into the new blueprint before you commit.
+
+---
+
 ## Disable what you don't want
 
 Blueprint ships with the full framework. If some of it is overkill for your team:
