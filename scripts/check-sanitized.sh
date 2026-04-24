@@ -51,11 +51,14 @@ LEAK_PATTERNS=(
   '\b-optiplex\b'
 
   # ─── Prod IP octets (upstream's VPS fleet — seen nowhere else) ────────
-  '\b102\.223\.[0-9]'
-  '\b102\.211\.[0-9]'
-  '\b102\.207\.[0-9]'
-  '\b102\.209\.[0-9]'
-  '\b192\.168\.10\.[0-9]'
+  # Final octet is 1–3 digits so we catch the full 0–255 range, not just
+  # single-digit hosts. Trailing \b prevents spurious matches on
+  # 102.223.1234 or 102.223.19.extra.
+  '\b102\.223\.[0-9]{1,3}\b'
+  '\b102\.211\.[0-9]{1,3}\b'
+  '\b102\.207\.[0-9]{1,3}\b'
+  '\b102\.209\.[0-9]{1,3}\b'
+  '\b192\.168\.10\.[0-9]{1,3}\b'
 
   # ─── Upstream-owned repo names ─────────────────────────────────────────
   '\bWSNextGenCCS-AI\b'
@@ -111,8 +114,15 @@ any_leak=0
 match_count=0
 
 for pattern in "${LEAK_PATTERNS[@]}"; do
-  # `grep -I` skips binary files; `-E` = extended regex; `-n` = line numbers
-  matches="$(grep -rEIn "$pattern" . \
+  # `grep -I` skips binary files; `-P` = Perl-compatible regex (PCRE)
+  # so `\b` reliably means word boundary and `{n,m}` means repetition.
+  # In POSIX ERE mode (`-E`), `\b` is ambiguous across grep implementations
+  # (GNU grep treats it as word boundary, strict POSIX treats it as a
+  # backspace). `-P` makes the semantics unambiguous. Requires a GNU grep
+  # built with PCRE support, which is the default on every mainstream
+  # Linux distribution. On macOS, install via `brew install grep` and
+  # invoke as `ggrep` — or disable this workflow on non-Linux forks.
+  matches="$(grep -rPIn "$pattern" . \
     "${EXCLUDE_DIR_FLAGS[@]}" "${EXCLUDE_FILE_FLAGS[@]}" 2>/dev/null || true)"
 
   if [[ -n "$matches" ]]; then
