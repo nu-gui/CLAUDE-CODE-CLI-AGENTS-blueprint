@@ -106,3 +106,9 @@ If anything goes wrong mid-merge:
 ## For manual (non-assisted) adoption
 
 These same rules apply whether Claude Code is driving the setup or you're doing it by hand. If you're adopting manually, scan `~/.claude/` against the three tables above before touching anything, run the backup command, and follow the same never-overwrite / merge / safe-to-replace discipline.
+
+## Maintainer note — keep in sync with the assisted Quickstart prompt
+
+The README's `§Quickstart — assisted` prompt (inside the code fence) carries the three-bucket policy inline at Step 6 on purpose: the prompt is designed to give Claude Code the full scope of work on paste, without any "read this other file" indirection. If you change the policy here, also update the prompt's Step 6 so both stay consistent. Same applies in reverse — tighten the prompt's rules, mirror them here.
+
+`CUSTOMIZATION.md` §"Respect existing ~/.claude state" is a pointer-only reference to this doc and needs no update when the policy changes.
