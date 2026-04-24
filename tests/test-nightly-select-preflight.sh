@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for PUFFIN-N3 preflight guard in scripts/nightly-select-projects.sh.
+# Smoke test for EXAMPLE-STAGE preflight guard in scripts/nightly-select-projects.sh.
 # Verifies both guard paths: (a) failure → exit 2 + log, (b) bypass via env var.
 #
 # Usage: bash tests/test-nightly-select-preflight.sh
@@ -12,7 +12,7 @@ LOG="$HOME/.claude/logs/nightly-errors.log"
 PASS=0; FAIL=0
 check() { if [[ "$2" -eq "$3" ]]; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (expected $3, got $2)"; FAIL=$((FAIL+1)); fi; }
 
-# Test 1: with no triggers registered on ${USER}-optiplex, guard fires → exit 2.
+# Test 1: with no triggers registered on ${USER}-workstation, guard fires → exit 2.
 # (This test assumes the test host has no nightly-puffin triggers. CI can skip
 #  or run inside a systemd-free container to satisfy the precondition.)
 # N3a: also check ~/.claude/scheduled_tasks.json as a third source.

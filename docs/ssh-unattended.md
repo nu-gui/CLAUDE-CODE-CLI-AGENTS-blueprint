@@ -1,6 +1,6 @@
 # SSH Agent Strategy for Unattended Nightly Git Operations
 
-**Machine:** `${USER}-optiplex` (Ubuntu 24.04, user `${USER}`)
+**Machine:** `${USER}-workstation` (Ubuntu 24.04, user `${USER}`)
 **Key file:** `~/.ssh/id_ed25519_github`
 **Issue:** [PUFFIN-S3 #69](https://github.com/${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint/issues/69)
 
@@ -41,7 +41,7 @@ A passphrase-less private key means **any process running as `${USER}` can use i
 | Restrictive file permissions | `chmod 600 ~/.ssh/id_ed25519_github` (verify with `ls -la ~/.ssh/`) |
 | Confirm key registered only on GitHub | `gh ssh-key list` — remove any stale entries |
 | Consider per-automation deploy key | See Option C below — a dedicated key scoped to automation repos limits blast radius if the machine is compromised |
-| Monitor GitHub audit log | <https://github.com/settings/security-log> — watch for unexpected pushes from `${USER}-optiplex` |
+| Monitor GitHub audit log | <https://github.com/settings/security-log> — watch for unexpected pushes from `${USER}-workstation` |
 | Full-disk encryption | Ensure `/home/${USER}` sits on an encrypted volume (Ubuntu installer default) so physical theft doesn't expose the key |
 
 ---
@@ -155,10 +155,10 @@ Generate a second key used **only** by nightly-puffin automation. Register it as
 
 ```bash
 # Generate — no passphrase
-ssh-keygen -t ed25519 -C "nightly-puffin@${USER}-optiplex" -f ~/.ssh/id_ed25519_nightly -N ""
+ssh-keygen -t ed25519 -C "nightly-puffin@${USER}-workstation" -f ~/.ssh/id_ed25519_nightly -N ""
 
 # Register with GitHub
-gh ssh-key add ~/.ssh/id_ed25519_nightly.pub --title "nightly-puffin ${USER}-optiplex"
+gh ssh-key add ~/.ssh/id_ed25519_nightly.pub --title "nightly-puffin ${USER}-workstation"
 
 # Add a Host alias in ~/.ssh/config
 cat >> ~/.ssh/config <<'EOF'

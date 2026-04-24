@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hive-status.sh — one-command 24h pipeline activity summary (PUFFIN-W18-ID1 / #92)
+# hive-status.sh — one-command 24h pipeline activity summary (EXAMPLE-ID / #92)
 # Usage:  hive-status.sh [--since <dur>] [--json] [--observe]
 # Exit 0=healthy  1=blocked/degraded
 # --observe: always exit 0 (for systemd/cron callers that only want a journal
@@ -40,7 +40,7 @@ EVENTS_FILE="${EVENTS:-$HIVE/events.ndjson}"
 # Filter events.ndjson to window; handle missing/empty file gracefully.
 # Use `jq -R 'fromjson? | select(...)'` so malformed/legacy lines (e.g. older
 # writers that emitted unquoted-key JS object literals) are silently skipped
-# instead of halting the whole filter. W18-ID17 discovered that jq's streaming
+# instead of halting the whole filter. EXAMPLE-ID discovered that jq's streaming
 # mode aborts at the first parse error, previously hiding ALL recent events.
 if [[ -s "$EVENTS_FILE" ]]; then
   FILTERED="$(jq -Rrc --arg t "$THRESHOLD" \
@@ -60,7 +60,7 @@ FAILED_UNITS_RAW="$(systemctl --user list-units --state=failed --type=service 'n
   --no-pager --no-legend 2>/dev/null | awk '{print $1}' | grep -v '^$' || true)"
 FAILED_COUNT=0; [[ -n "$FAILED_UNITS_RAW" ]] && FAILED_COUNT="$(echo "$FAILED_UNITS_RAW" | wc -l)"
 
-# Heartbeat stale-check (issue #96 / PUFFIN-W18-ID5; #168 derives list from yaml)
+# Heartbeat stale-check (issue #96 / EXAMPLE-ID; #168 derives list from yaml)
 # Any heartbeat key missing from heartbeats.log for >25 h is flagged STALE.
 # Expected keys come from the `heartbeats:` lists in nightly-schedule.yaml so
 # the two stay in lock-step (adding a new yaml trigger also registers its

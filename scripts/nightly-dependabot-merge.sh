@@ -19,7 +19,7 @@ QUEUE="$HIVE/nightly-queue.json"
 
 TODAY="$(date -u +%Y-%m-%d)"
 SESSION_ID="nightly-${TODAY}-dependabot"
-MAX_MERGES="${NIGHTLY_DEPENDABOT_MAX:-20}"  # W18-ID17: doubled default
+MAX_MERGES="${NIGHTLY_DEPENDABOT_MAX:-20}"  # EXAMPLE-ID: doubled default
 
 emit_event() { hive_emit_event "dependabot-merge" "$1" "$2"; }
 

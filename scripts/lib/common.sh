@@ -135,7 +135,7 @@ print(json.dumps(rec))
 }
 
 # ---------------------------------------------------------------------------
-# gh_api_safe — gh CLI wrapper with exponential backoff (issue #95 / W18-ID4)
+# gh_api_safe — gh CLI wrapper with exponential backoff (issue #95 / EXAMPLE-ID)
 # ---------------------------------------------------------------------------
 # Wraps any `gh` subcommand with retry logic so transient 429 / network
 # failures don't silently return empty results. Auth failures are detected
@@ -214,7 +214,7 @@ gh_api_safe() {
 
 # ---------------------------------------------------------------------------
 # ci_retrigger_after_merge — fire workflow_dispatch on master after auto-merge
-# (issue #93 / PUFFIN-W18-ID2)
+# (issue #93 / EXAMPLE-ID)
 # ---------------------------------------------------------------------------
 # Enumerates GitHub Actions workflows with a workflow_dispatch trigger for the
 # given repo and fires `gh workflow run <id> --ref master` on each.
@@ -301,7 +301,7 @@ ci_retrigger_after_merge() {
 }
 
 # ---------------------------------------------------------------------------
-# Sprint milestone resolution (issue #94 / PUFFIN-W18-ID3)
+# Sprint milestone resolution (issue #94 / EXAMPLE-ID)
 # ---------------------------------------------------------------------------
 # Return the title of the newest open milestone for REPO (e.g. "Sprint-2026-W18").
 # Result is cached per-process in an env var so the API is only hit once per
@@ -390,7 +390,7 @@ for trig in (y.get("triggers") or []):
 }
 
 # ---------------------------------------------------------------------------
-# Heartbeat (issue #96 / PUFFIN-W18-ID5)
+# Heartbeat (issue #96 / EXAMPLE-ID)
 # ---------------------------------------------------------------------------
 # Record a liveness heartbeat for the named trigger so hive-status.sh (and
 # monitoring alerts) can detect silently-dying systemd timers.
@@ -431,7 +431,7 @@ hive_heartbeat() {
 
 # ---------------------------------------------------------------------------
 # hive_add_to_project — add an issue/PR to the "${GITHUB_ORG:-your-org}/nightly-puffin" Projects v2
-# board by its URL (issue #97 / PUFFIN-W18-ID6).
+# board by its URL (issue #97 / EXAMPLE-ID).
 #
 # This is the per-issue fallback for the auto-add workflow. Call it immediately
 # after `gh issue create` so every new issue lands on the board even when the

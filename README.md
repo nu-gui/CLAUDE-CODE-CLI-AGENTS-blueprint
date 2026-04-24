@@ -52,6 +52,95 @@ bash scripts/clone-doctor.sh --help
 
 Full walkthrough: see [`CUSTOMIZATION.md`](CUSTOMIZATION.md).
 
+## Quickstart — assisted (Claude Code walks you through it)
+
+If Claude Code is already installed, open a session in the repo root (`~/.claude` after cloning) and paste the prompt below. Claude Code will read the key files, ask you for your environment values, and walk you through customizing each config — pausing at every step so you can adjust before anything lands.
+
+````markdown
+I've just cloned the CLAUDE-CODE-CLI-AGENTS-blueprint into this directory. It's
+a generic multi-agent Claude Code framework that needs to be customized for my
+environment before I use it. Please walk me through the full setup interactively.
+
+First, read these files to understand what needs configuring:
+- README.md (this overview)
+- CLAUDE.md (agent framework + workflow rules)
+- CUSTOMIZATION.md (detailed onboarding walkthrough)
+- TEMPLATE_VARIABLES.md (placeholder reference)
+- SECURITY.md (security posture + pre-commit checks)
+- .env.example
+- config/*.template (the five config files I need to populate)
+- agents/*.md (scan filenames to see which specialists are available)
+- .github/CODEOWNERS, .github/workflows/
+
+Then work through this checklist, PAUSING for my input at each step:
+
+1. **Identity** — Ask me for: GitHub org/user (GITHUB_ORG), my personal GitHub
+   handle (GITHUB_USER), IANA timezone (e.g. America/New_York), and my primary
+   machine's hostname. Create `.env` from `.env.example` with my values.
+
+2. **Repos to automate** — Ask me to list the repos I want the pipeline to
+   operate on (repo name → local clone path). Populate
+   `config/nightly-repo-profiles.yaml` from its `.template` with one entry per
+   repo. Ask per-repo what the deploy strategy is (skip / docker-compose /
+   kubectl / custom) and apply sensible guards (`*.env*` deny,
+   `migrations/**/*.sql` explicit-approve).
+
+3. **Schedule** — Copy `config/nightly-schedule.yaml.template` to live form.
+   Ask me which pipelines I actually want running (daytime-harrier /
+   nightly-puffin / both / neither); I can disable any I don't need. Adjust
+   cron times to my timezone.
+
+4. **Other configs** — Copy `config/digest-config.yaml.template`,
+   `config/doc-hygiene-profiles.yaml.template`,
+   `config/product-profiles.yaml.template` to live forms. Ask me if I want
+   each one enabled; leave disabled configs in their default (no-op) state.
+
+5. **Agent roster** — List the agents in `agents/`. Ask me which specialists
+   apply to my domain (e.g., I may not need `tel-core`/`tel-ops` if I'm not
+   in telecom, or `ml-core` if I'm not doing ML). Delete unused agent files
+   and trim the corresponding triggers from `CLAUDE.md`.
+
+6. **Review rules** — Ask for my GitHub handle(s) and update
+   `.github/CODEOWNERS`. Ask about my branching preference (GitHub flow
+   main-only, feature→master→main, trunk-based, etc.) and update the
+   relevant section in `CLAUDE.md`.
+
+7. **Settings** — Copy `settings.json.template` to `settings.json`. Walk
+   me through the hooks and permission allowlist; ask if I want to tighten
+   anything before it's active.
+
+8. **Bootstrap** — Run `bash scripts/bootstrap-fresh-machine.sh --dry-run`
+   and show me the output. Ask for my explicit yes before running without
+   `--dry-run`. After it completes, note any manual follow-ups it flagged
+   (MCP reconnection, PAT setup, etc.).
+
+9. **Verify** — Run `bash scripts/hive-doctor.sh`, `bash scripts/clone-doctor.sh`,
+   and `bash scripts/hive-status.sh --observe`. Report any red flags.
+
+10. **Summary** — Print a checklist of what's done, what I still need to do
+    manually (GitHub PAT rotation, cron vs systemd decision, MCP reconnect at
+    claude.ai/settings/connectors, inviting team members), and point me at
+    `CUSTOMIZATION.md` §"Disable what you don't want" if I want to strip
+    features later.
+
+Safety rules (strict):
+- Do NOT push to any GitHub repo without my explicit confirmation.
+- Do NOT create issues, PRs, or external resources without asking.
+- Do NOT run destructive operations (`rm -rf`, `git reset --hard`, etc.)
+  without my yes.
+- Prefer `--dry-run` when a script supports it; show output and ask before
+  the real run.
+- If a value I set conflicts with another config file, flag it and ask me
+  to reconcile rather than guessing.
+- Never commit `.env`, `settings.json`, `.credentials.json`, `*.pem`, or
+  `*.key` — run `git status` before every commit and halt if any of those
+  are staged.
+
+Start at step 1.
+````
+
+Copy everything from ` ```markdown` to the closing ` ``` `, paste it into Claude Code as your first message, and step through the customization with Claude as your copilot. If at any step you prefer to skip Claude's guidance and do it yourself, say so — the framework doesn't care which path you take.
+
 ## Mental model
 
 Claude Code reads config from `~/.claude/`. This repo IS that config, version-controlled. The `.gitignore` keeps runtime state (`sessions/`, `projects/`, `history.jsonl`, `settings.json`, credentials) out of git; only the agent framework and tooling ship in the repo.

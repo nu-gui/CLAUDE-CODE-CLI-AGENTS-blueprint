@@ -32,7 +32,7 @@
 
 set -euo pipefail
 
-# Shared helpers (issue #96 / W18-ID5): hive_heartbeat.
+# Shared helpers (issue #96 / EXAMPLE-ID): hive_heartbeat.
 # pool-worker sets its own PATH and HIVE before calling hive_cron_path so the
 # values stay consistent with the rest of the script.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"

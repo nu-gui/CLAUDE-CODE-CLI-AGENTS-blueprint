@@ -96,7 +96,7 @@ SESSION_ID="issue-planner-${TODAY}"
 REPO_SAFE="$(echo "$REPO" | tr '/' '-')"
 REPO_NAME="${REPO##*/}"
 
-# Resolve sprint milestone once at startup (issue #94 / PUFFIN-W18-ID3).
+# Resolve sprint milestone once at startup (issue #94 / EXAMPLE-ID).
 # Exported so sub-shell helpers can read the cached value.
 SPRINT_MILESTONE=""
 SPRINT_MILESTONE="$(hive_current_sprint_milestone "$REPO" 2>/dev/null || true)"
@@ -324,7 +324,7 @@ ensure_repo_clone() {
   run_or_echo "git -C '$REPO_PATH' fetch --prune origin"
   run_or_echo "git -C '$REPO_PATH' checkout master"
 
-  # W18-ID17: pull --ff-only aborts if untracked files would be overwritten.
+  # EXAMPLE-ID: pull --ff-only aborts if untracked files would be overwritten.
   # This happens when REPO_PATH resolves to ~/.claude (the live-state config
   # directory where orphaned files from dispatched agents can linger). Detect
   # dirty tree and skip the pull gracefully rather than failing the whole stage.
@@ -664,7 +664,7 @@ stage_merge() {
         '(.issues[] | select(.number == $n)).merged = true' \
         --argjson n "$num"
       emit_event "issue-planner" "COMPLETE" "#$num merged pr=$pr"
-      # Retrigger CI on master after auto-merge (issue #93 / PUFFIN-W18-ID2).
+      # Retrigger CI on master after auto-merge (issue #93 / EXAMPLE-ID).
       ci_retrigger_after_merge "$REPO"
     else
       emit_event "issue-planner" "BLOCKED" "#$num merge failed pr=$pr"

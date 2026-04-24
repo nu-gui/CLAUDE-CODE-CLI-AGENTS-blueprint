@@ -11,7 +11,7 @@
 # block the pipeline. Callers that need hard enforcement should check for a
 # BLOCKED event with code ACTIONS_BUDGET_WARN or ACTIONS_BUDGET_EXHAUSTED.
 #
-# Issue #100 (PUFFIN-W18-ID9)
+# Issue #100 (EXAMPLE-ID)
 # Usage: bash scripts/actions-budget-monitor.sh [--dry-run]
 
 set -euo pipefail

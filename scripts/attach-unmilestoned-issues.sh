@@ -5,7 +5,7 @@
 # (product-backlog or nightly-candidate label) that were created in the last
 # 24 hours without a milestone.
 #
-# Nice-to-have helper for issue #94 (PUFFIN-W18-ID3). Run manually or add to
+# Nice-to-have helper for issue #94 (EXAMPLE-ID). Run manually or add to
 # cron after product-discovery.sh if you want retroactive milestone coverage.
 #
 # Usage:

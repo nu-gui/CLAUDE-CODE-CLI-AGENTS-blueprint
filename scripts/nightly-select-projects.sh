@@ -26,12 +26,12 @@ QUEUE="$HIVE/nightly-queue.json"
 CACHE="$HIVE/nightly-queue.cache.json"
 HIVE_DEFAULT_AGENT="selector"
 
-# W19-ID22: accept comma-separated owner list so ${GITHUB_ORG:-your-org} (and any future org)
+# EXAMPLE-ID: accept comma-separated owner list so ${GITHUB_ORG:-your-org} (and any future org)
 # is in scope. Default keeps backward-compat for single-owner setups.
 NIGHTLY_OWNER="${NIGHTLY_OWNER:-${GITHUB_ORG:-your-org},${GITHUB_ORG:-your-org}}"
 IFS=',' read -r -a OWNERS <<< "$NIGHTLY_OWNER"
 OWNER="${OWNERS[0]}"  # kept for any legacy scalar reference in this file
-# W18-ID17: doubled MAX_REPOS/MAX_ISSUES defaults per user directive.
+# EXAMPLE-ID: doubled MAX_REPOS/MAX_ISSUES defaults per user directive.
 MAX_REPOS="${NIGHTLY_MAX_REPOS:-6}"
 MAX_ISSUES="${NIGHTLY_MAX_ISSUES:-16}"
 READINESS_THRESHOLD="${NIGHTLY_READINESS_THRESHOLD:-40}"
@@ -63,7 +63,7 @@ hive_heartbeat "nightly-select-projects"
 [[ -f "$PROFILES" ]] || { escalate "CONFIG_MISSING" "$PROFILES"; exit 20; }
 gh auth status >/dev/null 2>&1 || { escalate "GH_AUTH_FAIL" "gh auth status failed"; exit 10; }
 
-# Preflight: scheduler triggers present (#72 / PUFFIN-N3, extended by #84 / N3a).
+# Preflight: scheduler triggers present (#72 / EXAMPLE-STAGE, extended by #84 / N3a).
 # Refuse to run the selector if no nightly-puffin triggers are registered — otherwise
 # we silently build a queue nothing will consume. Sources checked:
 #   1. systemd --user timers (visible)
@@ -85,12 +85,12 @@ if [[ "${NIGHTLY_SKIP_TRIGGER_CHECK:-0}" != "1" ]]; then
   emit_event "PROGRESS" "trigger-preflight-ok: systemd=$sd_count cron=$cr_count schedule=$sch_count"
 fi
 
-# --- Fetch repos across ALL configured owners (W19-ID22) ---
+# --- Fetch repos across ALL configured owners (EXAMPLE-ID) ---
 # Each repo row is augmented with an `owner` field so downstream scoring +
 # queue-emit stages can distinguish same-name repos across orgs.
 #
 # Union step uses temp files + slurpfile to avoid ARG_MAX on large payloads
-# (same class as W19-ID21). Accumulate into a single tmpfile across iterations.
+# (same class as EXAMPLE-ID). Accumulate into a single tmpfile across iterations.
 _union_dir="$(mktemp -d /tmp/nightly-select-union.XXXXXX)"
 # shellcheck disable=SC2064
 trap "rm -rf '$_union_dir' ${_scored_tmpdir:-}" EXIT
@@ -130,7 +130,7 @@ if [[ "$N_REPOS" -eq 0 ]]; then
   exit 0
 fi
 
-# --- Fetch open issues and PRs across ALL configured owners (W19-ID22) ---
+# --- Fetch open issues and PRs across ALL configured owners (EXAMPLE-ID) ---
 # Union via temp files to avoid ARG_MAX (same class fix as REPOS_RAW above).
 echo '[]' > "$_union_dir/issues.json"
 echo '[]' > "$_union_dir/prs.json"
@@ -282,7 +282,7 @@ PR_IN_FLIGHT_REFS="$(echo "$PRS_JSON" | jq '
 AGENT_PREFIX_RE='^\[(API-CORE|DATA-CORE|UI-BUILD|INFRA-CORE|FEATURE|SECURITY|P0-SEC|DEPLOY|tech-debt)\]'
 
 # --- Score each repo ---
-# W19-ID21: passing $ISSUES_JSON + $PRS_JSON via --argjson breaks at ARG_MAX
+# EXAMPLE-ID: passing $ISSUES_JSON + $PRS_JSON via --argjson breaks at ARG_MAX
 # (~2MB) once the org has ~200+ issues/PRs with boosted label blobs. Switch to
 # --slurpfile with a temp-file fan-out so jq reads each payload from the
 # filesystem instead of argv. Files are auto-cleaned via trap on script exit.

@@ -1,6 +1,6 @@
 # PR Sweeper Triage Mode
 
-Added in PUFFIN-W19-ID10 (issue #131). Extends `scripts/pr-sweeper.sh` with a
+Added in EXAMPLE-ID (issue #131). Extends `scripts/pr-sweeper.sh` with a
 `--triage` flag that sub-classifies the `NEEDS_ATTENTION` bucket into five
 actionable sub-buckets, each carrying an executable auto-action.
 

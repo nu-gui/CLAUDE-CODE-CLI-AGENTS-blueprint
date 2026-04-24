@@ -166,7 +166,7 @@ dispatch_one() {
 
   # Refuse deprecated path defensively (wrappers elsewhere already block it).
   if [[ "$repo" == "orchestrator" ]] || [[ "$repo" == *"/orchestrator" ]]; then
-    escalate "$sid" "DEPRECATED_PATH" "refusing to run on /home/*/orchestrator (use example-repo-AI)"
+    escalate "$sid" "DEPRECATED_PATH" "refusing to run on /home/*/orchestrator (use example-repo)"
     return 0
   fi
 

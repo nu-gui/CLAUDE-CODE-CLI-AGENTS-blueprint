@@ -5,7 +5,7 @@
 # Clone Doctor — verify ~/.claude (live runtime) and a working clone of this
 # repo (e.g. ~/github/${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint) are in sync on master.
 #
-# Background: this repo is intentionally checked out twice on ${USER}-optiplex —
+# Background: this repo is intentionally checked out twice on ${USER}-workstation —
 # once as ~/.claude/ (where Claude Code reads config) and once under ~/github/
 # for clean PR/branch work. The .gitignore keeps runtime state out of git, so
 # the two clones should have byte-identical tracked content whenever both are

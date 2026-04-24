@@ -153,7 +153,7 @@ write_unit_pair() {
     log "WARNING: trigger '${name}' calls hive-status.sh without --observe; systemd will mark the unit failed on DEGRADED/BLOCKED. Add --observe to the prompt in nightly-schedule.yaml (see #140)."
   fi
 
-  # W18-ID14: overnight stages that chain 2+ claude -p specialists get 90 min;
+  # EXAMPLE-ID: overnight stages that chain 2+ claude -p specialists get 90 min;
   # all other triggers keep the default 30 min (1800s).
   local timeout
   case "$name" in
