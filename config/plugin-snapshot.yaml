@@ -1,0 +1,144 @@
+# Claude Code plugin + MCP snapshot — nightly-puffin disaster recovery
+#
+# Purpose: reproduce the plugin surface on a fresh machine after catastrophic
+# loss of ~/.claude. Regenerate with scripts/plugin-snapshot-regen.sh (see below).
+#
+# Owner: nightly-puffin automation (sprint-2026-W17 / PUFFIN-N2 / issue #75)
+# Snapshot host: ${USER}-optiplex (Ubuntu 24.04, user ${USER})
+
+snapshot:
+  generated: "2026-04-20T07:30:00Z"
+  host: ${USER}-optiplex
+  user: ${USER}
+  claude_cli_version: "2.1.114"
+
+# ============================================================================
+# Claude Code CLI
+# ============================================================================
+claude_cli:
+  installed_version: "2.1.114"
+  pinned_for_nightly: "2.1.111"    # see config/nightly-schedule.yaml cli_pin
+  drift_note: |
+    Installed CLI (2.1.114) is ahead of the nightly-schedule cli_pin (2.1.111).
+    Per cli_pin docstring, re-validate scripts against the new CLI before
+    bumping cli_pin. Non-blocking; nightly-puffin runs against whichever
+    CLI is currently on PATH.
+
+# ============================================================================
+# Plugin Marketplaces
+# ============================================================================
+marketplaces:
+  - name: claude-plugins-official
+    path: ~/.claude/plugins/marketplaces/claude-plugins-official
+    description: Anthropic-maintained official plugin marketplace
+    restore_command: |
+      # This marketplace is distributed as a subtree of ~/.claude (part of the
+      # ${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint repo). No separate install — it comes
+      # with the repo clone.
+
+# ============================================================================
+# External Plugins (installed via marketplace)
+# ============================================================================
+# Each plugin lives under marketplaces/claude-plugins-official/external_plugins/<name>/
+# Plugins are file-tree artifacts — no package manager for restore. The set
+# below was present on ${USER}-optiplex at snapshot time and is committed via the
+# marketplace directory tree.
+external_plugins:
+  - name: asana
+  - name: context7
+  - name: discord
+  - name: fakechat
+  - name: firebase
+  - name: github
+  - name: gitlab
+  - name: greptile
+  - name: imessage
+  - name: laravel-boost
+  - name: linear
+  - name: playwright
+  - name: serena
+  - name: telegram
+  - name: terraform
+
+# ============================================================================
+# Remote MCP Connectors (configured via https://claude.ai/settings/connectors)
+# ============================================================================
+# These are bound to the Claude workspace account (wes@zyongate.com) — NOT to
+# this machine. Re-auth is needed after any account / workspace change.
+# Per PUFFIN-B3 (#71 closed 2026-04-20): all four were re-authenticated post
+# WSL2 → native Ubuntu migration.
+remote_mcps:
+  - name: Gmail
+    provider: claude.ai workspace
+    tool_prefix: mcp__claude_ai_Gmail__
+    auth_status: active
+  - name: Google Calendar
+    provider: claude.ai workspace
+    tool_prefix: mcp__claude_ai_Google_Calendar__
+    auth_status: active
+  - name: Google Drive
+    provider: claude.ai workspace
+    tool_prefix: mcp__claude_ai_Google_Drive__
+    auth_status: active
+    notes: |
+      Drive-specific re-auth completed 2026-04-20. If the cache
+      (~/.claude/mcp-needs-auth-cache.json) ever shows a stale entry,
+      clear to "{}" and retry.
+  - name: GitHub
+    provider: claude.ai workspace
+    tool_prefix: mcp__claude_ai_GitHub__
+    auth_status: active
+
+# ============================================================================
+# Local MCP Servers
+# ============================================================================
+# Tool surface: mcp__figma__* is present in the deferred-tool list, indicating
+# a configured figma MCP. No explicit mcpServers block in settings.json — the
+# server is registered through a Claude Code CLI mechanism (claude mcp add ...)
+# whose state lives outside settings.json. Restore via:
+#   claude mcp add figma --scope user <args>
+# Re-verify from the claude.ai side if the tool disappears.
+local_mcps:
+  - name: figma
+    tool_prefix: mcp__figma__
+    registration: claude mcp add (user scope)
+    notes: |
+      Configured; exact registration parameters not captured. On disaster
+      recovery, check https://www.figma.com/developers for latest MCP
+      instructions or re-run `claude mcp add figma` interactively.
+
+# ============================================================================
+# Restore Procedure (disaster recovery)
+# ============================================================================
+# On a fresh machine rebuild:
+#
+# 1. Install Claude Code CLI 2.1.111 (or later; verify nightly scripts still
+#    pass with newer versions before bumping cli_pin).
+#
+# 2. Clone the config repo:
+#      git clone git@github.com:${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint.git ~/.claude
+#    This brings:
+#      - the official marketplace subtree
+#      - all 15 external plugins
+#      - all hooks, agents, scripts, handbook, protocols
+#
+# 3. Sign in to the Claude workspace (wes@zyongate.com) via the CLI:
+#      claude auth login
+#
+# 4. Reconnect the 4 remote MCPs in https://claude.ai/settings/connectors:
+#      Gmail, Google Calendar, Google Drive, GitHub
+#    (They're workspace-scoped, so this is a one-time click-through.)
+#
+# 5. Re-register local MCPs:
+#      claude mcp add figma ...
+#
+# 6. Re-register the nightly-puffin triggers per
+#    ~/.claude/plans/puffin-b2-register-triggers.md.
+#
+# 7. Verify:
+#      bash scripts/nightly-select-projects.sh  # N3 guard should pass
+#      jq . config/plugin-snapshot.yaml         # this file parses
+#
+# This snapshot is regenerated by the automation periodically — if the file
+# is >30 days old on disaster recovery, verify current state first and treat
+# older entries as hints rather than ground truth.

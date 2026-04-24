@@ -1,0 +1,57 @@
+# Per-repo profiles for the nightly-puffin pipeline.
+#
+# The dispatcher (scripts/nightly-dispatch.sh) reads this file via `yq` and
+# uses it to drive repo selection, deploy strategy, guards, and coupled-group
+# atomic deploys. The deploy preflight resolves `local_path` via
+# `hive_resolve_local_path` (see scripts/lib/common.sh) which supports
+# `${HOME}` / `$HOME` expansion, so you can write portable paths here.
+#
+# Every entry is OPTIONAL. A repo can be named with just a `local_path` and
+# no deploy, and the selector will pick it up for general dispatch.
+#
+# After copying to `config/nightly-repo-profiles.yaml`, edit the example
+# entries below to match your own repos. Delete the `example-repo` entries
+# once you've replaced them.
+
+repos:
+  # -- Minimal example ------------------------------------------------------
+  example-repo:
+    local_path: ${HOME}/github/your-org/example-repo
+    deploy:
+      kind: skip
+      command: "echo 'example-repo deploy skipped: customize this block'"
+
+  # -- Example with guards and docker-compose deploy ------------------------
+  example-repo-with-deploy:
+    local_path: ${HOME}/github/your-org/example-repo-with-deploy
+    deploy:
+      kind: docker-compose
+      command: "docker compose -f docker-compose.prod.yaml up -d --build"
+    guards:
+      - {path: "*.env*",                  mode: deny}
+      - {path: "migrations/**/*.sql",     mode: explicit-approve}
+      - {path: ".github/workflows/*",     mode: sup-00-reviewed}
+
+  # -- Example of a coupled atomic-deploy pair ------------------------------
+  # If two repos must deploy together (shared contract, API + UI), name them
+  # with the same coupled_group. The deploy preflight will require both to be
+  # green before either deploys.
+  #
+  # example-api:
+  #   local_path: ${HOME}/github/your-org/example-api
+  #   coupled_group: example-pair
+  #   deploy:
+  #     kind: docker-compose
+  #     command: "docker compose -f api/docker-compose.yaml up -d --build"
+  #
+  # example-ui:
+  #   local_path: ${HOME}/github/your-org/example-ui
+  #   coupled_group: example-pair
+  #   deploy:
+  #     kind: docker-compose
+  #     command: "docker compose -f ui/docker-compose.yaml up -d --build"
+
+# Paths the dispatch wrapper must refuse to operate on (safety rail). Add any
+# deprecated / off-limits directories here.
+deprecated:
+  - ${HOME}/deprecated-example    # placeholder — replace or remove

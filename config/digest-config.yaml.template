@@ -1,0 +1,39 @@
+# Morning-digest destinations and formatting.
+#
+# After copying to `config/digest-config.yaml`, edit the channel list and
+# recipient addresses for your team.
+
+# Where the morning-digest.sh output is delivered.
+channels:
+  # Local markdown file (always written; good for debugging)
+  - type: local-file
+    path: ${HOME}/.claude/logs/morning-digest-$(date +%Y%m%d).md
+    enabled: true
+
+  # Gmail draft via the claude_ai Gmail connector (requires MCP auth)
+  - type: gmail-draft
+    recipient: your-email@example.com
+    subject: "Nightly digest — $(date +%Y-%m-%d)"
+    enabled: false
+
+  # Slack webhook (add your webhook URL to the env; never commit it)
+  - type: slack-webhook
+    webhook_env_var: SLACK_DIGEST_WEBHOOK
+    channel: "#eng-nightly"
+    enabled: false
+
+# Sections to include (in order). Set to false to hide.
+sections:
+  summary: true                      # 1-line tl;dr
+  prs_merged: true
+  prs_blocked: true                  # stale / needs-revision / CI-failed
+  issues_created: true
+  deploys: true
+  errors: true                       # events.ndjson ERROR entries
+  actions_budget: true               # remaining GitHub Actions minutes
+
+# Cosmetics
+style:
+  emoji: true
+  max_prs_per_section: 15
+  max_issues_per_section: 10

@@ -1,0 +1,75 @@
+# =============================================================================
+# Multi-VPS Deployment Configuration (YAML Format)
+# =============================================================================
+# This file configures multiple VPS servers for deployment.
+#
+# Usage:
+#   ./deploy-to-vps.sh --servers servers.yaml
+#   ./deploy-to-vps.sh --servers servers.yaml --parallel 3
+#   ./deploy-to-vps.sh --servers servers.yaml --server vps-01 --server vps-02
+#
+# Copy this file to ~/.claude/deploy/servers.yaml and customize.
+# =============================================================================
+
+# Default settings applied to all servers (can be overridden per-server)
+defaults:
+  branch: main
+  ssh_key: ~/.ssh/id_ed25519
+
+# Server definitions
+servers:
+  # Production VPS
+  - name: prod-01
+    host: prod.example.com
+    user: deploy
+    port: 22
+    ssh_key: ~/.ssh/prod-key.pem
+    branch: main
+    tags:
+      - production
+      - primary
+    options:
+      force: true
+      no_backup: false
+
+  # Staging VPS
+  - name: staging-01
+    host: staging.example.com
+    user: deploy
+    port: 22
+    branch: develop
+    tags:
+      - staging
+    options:
+      force: true
+
+  # Development VPS (uses defaults for branch and ssh_key)
+  - name: dev-01
+    host: 192.168.1.100
+    user: developer
+    port: 2222
+    tags:
+      - development
+    options:
+      force: true
+      no_hooks: true
+
+  # Backup/DR VPS
+  - name: backup-01
+    host: dr.example.com
+    user: root
+    port: 22
+    ssh_key: ~/.ssh/backup-key.pem
+    tags:
+      - backup
+      - disaster-recovery
+    options:
+      force: true
+      no_backup: true
+
+# Notes:
+# - All servers must be reachable via SSH
+# - SSH keys must be pre-configured on remote servers
+# - The deploy script will be downloaded and run on each server
+# - Use --parallel N to deploy to multiple servers concurrently
+# - Use --server NAME to deploy to specific servers only

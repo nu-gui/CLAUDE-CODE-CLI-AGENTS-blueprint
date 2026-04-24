@@ -1,0 +1,40 @@
+name: bash-lint
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**/*.sh'
+      - 'hooks/**/*.sh'
+      - '.github/workflows/bash-lint.yml'
+  push:
+    branches: [master, main]
+    paths:
+      - 'scripts/**/*.sh'
+      - 'hooks/**/*.sh'
+
+# Cheap gate: every PR that touches a shell file must have it parse cleanly.
+# Catches stray quotes, unclosed heredocs, malformed case statements — the
+# classes of bug that would otherwise only surface when cron fires overnight.
+# Not a full shellcheck (too noisy for this repo's style); just `bash -n`.
+
+jobs:
+  syntax:
+    name: bash -n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check every shell file under scripts/ and hooks/
+        run: |
+          set -e
+          any_failed=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if bash -n "$f"; then
+              echo "OK   $f"
+            else
+              echo "FAIL $f"
+              any_failed=1
+            fi
+          done < <(find scripts hooks -type f -name '*.sh' 2>/dev/null)
+          exit $any_failed

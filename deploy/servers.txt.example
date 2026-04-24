@@ -1,0 +1,41 @@
+# =============================================================================
+# Multi-VPS Deployment Configuration (Simple TXT Format)
+# =============================================================================
+# This is a simpler alternative to servers.yaml for quick setups.
+#
+# Format: name user@host:port ssh_key [options]
+#
+# - name:     Unique identifier for the server
+# - user:     SSH username (default: root)
+# - host:     Hostname or IP address
+# - port:     SSH port (default: 22)
+# - ssh_key:  Path to SSH private key (use - for default/agent)
+# - options:  Additional flags passed to deploy script
+#
+# Usage:
+#   ./deploy-to-vps.sh --servers servers.txt
+#   ./deploy-to-vps.sh --servers servers.txt --parallel 2
+#
+# Copy this file to ~/.claude/deploy/servers.txt and customize.
+# =============================================================================
+
+# Production servers
+prod-01 deploy@prod.example.com:22 ~/.ssh/prod-key.pem --force
+prod-02 deploy@prod2.example.com:22 ~/.ssh/prod-key.pem --force
+
+# Staging server
+staging-01 deploy@staging.example.com:22 - --force
+
+# Development servers (uses default SSH key)
+dev-01 developer@192.168.1.100:2222 - --force --no-hooks
+dev-02 developer@192.168.1.101:2222 - --force --no-hooks
+
+# Backup server
+backup-01 root@dr.example.com:22 ~/.ssh/backup-key.pem --force --no-backup
+
+# Notes:
+# - Lines starting with # are comments
+# - Empty lines are ignored
+# - Use - for ssh_key to use default/ssh-agent
+# - Options are passed directly to the deploy script
+# - Servers are deployed in order listed (unless --parallel)

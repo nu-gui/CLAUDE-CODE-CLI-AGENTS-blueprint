@@ -1,0 +1,36 @@
+# Per-repo doc-hygiene profiles.
+#
+# Drives `scripts/doc-hygiene-scan.sh` — DOC-00 agent runs a daily sweep over
+# a rotating subset of your repos to detect stale docs, broken links, missing
+# READMEs, and inconsistent conventions.
+#
+# Copy to `config/doc-hygiene-profiles.yaml` and customize the `repos:` block
+# for your portfolio.
+
+# Rotation: how many repos to sweep per day. Full cycle takes ceil(repos/bucket) days.
+bucket_size: 3
+
+# Days on which the scan runs (0=Sun, 6=Sat). Default Mon–Fri.
+active_days: [1, 2, 3, 4, 5]
+
+# Per-repo rules. Override any global defaults.
+repos:
+  example-repo:
+    local_path: ${HOME}/github/your-org/example-repo
+    rules:
+      - require_readme_top_level: true
+      - require_changelog: false
+      - max_stale_days_in_docs: 90       # warn if doc not touched in 90d
+      - check_relative_links: true
+
+# Global defaults applied to every repo unless overridden.
+defaults:
+  require_readme_top_level: true
+  require_changelog: false
+  max_stale_days_in_docs: 180
+  check_relative_links: true
+  ignore_paths:
+    - "**/node_modules/**"
+    - "**/vendor/**"
+    - "**/dist/**"
+    - "**/.next/**"

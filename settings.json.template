@@ -1,0 +1,105 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/dispatch-reminder.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-session-stop.sh"
+      },
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-session-end.sh"
+      }
+    ],
+    "StopFailure": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-stop-failure.sh"
+      }
+    ],
+    "SubagentStart": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-subagent-start.sh"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-subagent-stop.sh"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-track-file-changes.sh"
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-tool-failure.sh"
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "~/.claude/hooks/hive-precompact-snapshot.sh"
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Agent(api-core)",
+      "Agent(api-gov)",
+      "Agent(orc-00-orchestrator)",
+      "Agent(sup-00-qa-governance)",
+      "Agent(plan-00-product-delivery)",
+      "Agent(ctx-00-context-manager)",
+      "Agent(doc-00-documentation)",
+      "Agent(com-00-inbox-gateway)",
+      "Agent(ui-build)",
+      "Agent(ux-core)",
+      "Agent(data-core)",
+      "Agent(ml-core)",
+      "Agent(infra-core)",
+      "Agent(insight-core)",
+      "Agent(test-00-test-runner)",
+      "Agent(tel-core)",
+      "Agent(tel-ops)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(npm *)",
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(docker *)",
+      "Bash(kubectl *)",
+      "Bash(ssh *)",
+      "Bash(jq *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(date *)"
+    ],
+    "deny": [
+      "Agent(general-purpose)",
+      "Bash(rm -rf *)",
+      "Bash(sudo rm *)",
+      "Bash(dd if=*)",
+      "Bash(mkfs *)",
+      "Bash(chmod 777 *)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | bash)"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+* @${GITHUB_ORG:-your-org}
+scripts/ @${GITHUB_ORG:-your-org}
+config/ @${GITHUB_ORG:-your-org}
+docs/ @${GITHUB_ORG:-your-org}
+agents/ @${GITHUB_ORG:-your-org}

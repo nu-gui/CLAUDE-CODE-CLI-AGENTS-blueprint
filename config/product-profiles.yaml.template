@@ -1,0 +1,39 @@
+# Per-repo product-discovery profiles.
+#
+# Drives `scripts/product-discovery.sh` — PROD-00 agent scans each repo for
+# feature gaps by comparing `ROADMAP.md` claims against actual code, then
+# creates well-formed [FEATURE] or [AGENT-*] issues tagged `product-backlog`.
+#
+# Copy to `config/product-profiles.yaml` and populate `repos:` with your own.
+
+# Cooldown between consecutive runs on the same repo (seconds).
+per_repo_cooldown: 10800              # 3 hours
+
+# Max issues to create per repo per run.
+max_issues_per_run: 5
+
+# Per-repo configuration.
+repos:
+  example-repo:
+    local_path: ${HOME}/github/your-org/example-repo
+    # Required: PROD-00 will not create issues for repos without ROADMAP.md.
+    # If missing, it scaffolds ROADMAP-proposals.md and emits BLOCKED.
+    require_roadmap: true
+    # Issue labels to apply.
+    labels: ["product-backlog", "needs-triage"]
+    # Maximum issues open at once under `product-backlog`. Stops creating
+    # once this ceiling is reached.
+    max_open_backlog: 20
+    # Additional keywords that, when found in code but not ROADMAP, trigger
+    # [AGENT-*] issues rather than generic [FEATURE].
+    agent_keywords:
+      - "claude-p"
+      - "orchestrator"
+      - "hive"
+
+# Global defaults (used when not specified per-repo).
+defaults:
+  require_roadmap: true
+  labels: ["product-backlog"]
+  max_open_backlog: 10
+  agent_keywords: []

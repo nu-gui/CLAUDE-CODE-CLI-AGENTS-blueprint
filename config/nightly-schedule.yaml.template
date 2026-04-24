@@ -1,0 +1,116 @@
+# Master schedule for nightly-puffin and daytime-harrier pipelines.
+#
+# The `scripts/install-systemd-timers.sh` helper reads this file and generates
+# systemd user timers for each trigger. Times are interpreted in the timezone
+# set by `TIMEZONE=` in your `.env`, or overridden per-trigger with `tz:`.
+#
+# After copying to `config/nightly-schedule.yaml`, edit cron times to match
+# when you want each stage to run in your local time.
+
+timezone: UTC
+
+triggers:
+  # ─── Daytime harrier (shallow sweeps, discovery, triage) ──────────────
+  - name: product-discovery
+    cron: "0 9-20 * * *"           # hourly 09:00–20:00
+    script: product-discovery.sh
+    description: "PROD-00 feature-gap scan across your repo portfolio"
+
+  - name: mini-dispatch-1
+    cron: "7 10 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=mini"]
+    description: "Daytime micro-dispatch, 3 commits / 1 PR / 15 files per repo"
+
+  - name: mini-dispatch-2
+    cron: "17 13 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=mini"]
+
+  - name: mid-day-sprint-refresh
+    cron: "3 15 * * *"
+    script: evening-sprint-collate.sh
+    args: ["--mode=refresh"]
+    description: "PLAN-00 picks up newly-created PROD-00 issues"
+
+  - name: mini-dispatch-3
+    cron: "27 16 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=mini"]
+
+  - name: mini-dispatch-4
+    cron: "37 19 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=mini"]
+    description: "Warms worktrees before evening-sprint-collate"
+
+  - name: evening-sprint-collate
+    cron: "0 21 * * *"
+    script: evening-sprint-collate.sh
+    description: "PLAN-00 sprint collation to Sprint-YYYY-Www milestone"
+
+  # ─── Nightly puffin (deep dive, full dispatch, deploy) ─────────────────
+  - name: nightly-select-projects
+    cron: "30 23 * * *"
+    script: nightly-select-projects.sh
+    description: "Dynamic queue ranking for tonight's dispatch"
+
+  - name: stage-A-plan-gap-fill
+    cron: "0 0 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=A"]
+
+  - name: issue-planner
+    cron: "30 0 * * *"
+    script: issue-planner.sh
+    description: "Per-issue parallel task planner; feeds Stage B1"
+
+  - name: stage-B1-specialists-wave-1
+    cron: "0 1 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=B1"]
+
+  - name: dependabot-merge
+    cron: "5 1 * * *"
+    script: nightly-dependabot-merge.sh
+
+  - name: stage-B2-specialists-wave-2
+    cron: "30 2 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=B2"]
+
+  - name: stage-C1-test-review
+    cron: "0 4 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=C1"]
+
+  - name: stage-C2-deploy
+    cron: "30 5 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=C2"]
+
+  - name: deploy-staging
+    cron: "40 5 * * *"
+    script: nightly-deploy.sh
+
+  - name: digest-prep
+    cron: "30 6 * * *"
+    script: nightly-dispatch.sh
+    args: ["stage=digest-prep"]
+
+  - name: morning-digest
+    cron: "45 6 * * *"
+    script: morning-digest.sh
+    description: "Full overnight report → email draft + local markdown"
+
+  # ─── Weekly maintenance ────────────────────────────────────────────────
+  - name: hive-maintenance
+    cron: "0 2 * * 0"              # Sunday 02:00
+    script: hive-maintenance.sh
+    description: "Session archival, events.ndjson rotation, log gzip"
+
+  # ─── Doc hygiene (daily rotation across repos) ─────────────────────────
+  - name: doc-hygiene-scan
+    cron: "30 8 * * *"
+    script: doc-hygiene-scan.sh
+    description: "DOC-00 daily bucket sweep"
