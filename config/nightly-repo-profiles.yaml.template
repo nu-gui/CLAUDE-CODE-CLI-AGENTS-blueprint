@@ -13,6 +13,12 @@
 # entries below to match your own repos. Delete the `example-repo` entries
 # once you've replaced them.
 
+# Top-level convention root. When a repo entry has no explicit `local_path`,
+# the resolver falls back to `${github_root}/${GITHUB_ORG}/{repo-name}` →
+# `${github_root}/{secondary-org}/{repo-name}` → `${HOME}/{repo-name}`.
+# Override per-repo with `local_path:` when a repo lives outside this layout.
+github_root: "${HOME}/github"
+
 repos:
   # -- Minimal example ------------------------------------------------------
   example-repo:

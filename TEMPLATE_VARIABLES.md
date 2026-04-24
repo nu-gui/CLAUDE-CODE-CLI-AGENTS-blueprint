@@ -71,6 +71,41 @@ EXPECTED_REMOTE="git@github.com:${GITHUB_ORG}/CLAUDE-CODE-CLI-AGENTS-blueprint.g
 
 Or edit the default at the top of `scripts/clone-doctor.sh` directly for your fork.
 
+### `${NIGHTLY_OWNER}`
+
+Comma-separated list of GitHub owners the nightly-puffin pipeline should scope its searches to. Defaults to `${GITHUB_ORG}` if unset. Useful if you have repos spread across multiple orgs (e.g. `your-org,your-org-subsidiary`).
+
+Appears in: `scripts/morning-digest.sh`, `scripts/pr-sweeper.sh`, `scripts/actions-budget-monitor.sh`, `scripts/nightly-select-projects.sh`.
+
+Set via: `.env` (commented out by default).
+
+### Morning-digest delivery variables
+
+All four are optional. Leaving them unset → digest writes local markdown only (default behavior). Set one cluster to enable that delivery channel.
+
+| Variable | For channel | Purpose |
+|---|---|---|
+| `GMAIL_OAUTH_CREDENTIALS_PATH` | Gmail OAuth | Path to your Google Cloud credentials JSON (default: `${HOME}/.config/morning-digest-gmail/credentials.json`) |
+| `DIGEST_RECIPIENT_EMAIL` | Gmail OAuth / SMTP | Email address where the digest lands |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | SMTP | Your SMTP provider credentials. `.env` is gitignored; `SMTP_PASS` belongs nowhere public. |
+| `DIGEST_TARGET_REPO` | GitHub Discussion | Repo (e.g. `${GITHUB_ORG}/your-ops-repo`) where the digest is posted as a Discussion comment. Requires Discussions enabled on that repo. |
+
+Full walkthroughs for each channel in `CUSTOMIZATION.md` §"Email delivery options".
+
+## Top-level YAML keys (config/*.template)
+
+### `github_root` (in `config/nightly-repo-profiles.yaml`)
+
+Added in upstream PR #166. When a repo entry doesn't have an explicit `local_path:`, the dispatcher resolver (`hive_resolve_local_path` in `scripts/lib/common.sh`) falls back to:
+
+```
+${github_root}/${GITHUB_ORG}/{repo-name}  →
+${github_root}/{secondary-org}/{repo-name}  →
+${HOME}/{repo-name}
+```
+
+Default value: `"${HOME}/github"`. Override at the top of `config/nightly-repo-profiles.yaml` if your clones live elsewhere.
+
 ## Placeholder strings in examples
 
 Generic strings you'll see in docs and config templates:
