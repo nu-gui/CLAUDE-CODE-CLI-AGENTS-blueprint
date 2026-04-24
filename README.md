@@ -57,42 +57,208 @@ Full walkthrough: see [`CUSTOMIZATION.md`](CUSTOMIZATION.md).
 If Claude Code is already installed, open a session in the repo root (`~/.claude` after cloning) and follow this two-step routine:
 
 1. **Switch to plan mode first** — press `Ctrl+J` in Claude Code and pick **Plan** (or run the `/plan` skill). Plan mode is read-only, so Claude will interview you and produce a customization plan without touching anything until you approve.
-2. **Paste the prompt below** as your first message. Claude Code will read the canonical setup spec, scan your machine, interview you, and write a customization plan for your review before any file is written.
+2. **Paste the prompt below** as your first message. Claude Code will scan your machine, interview you, and write a customization plan for your review before any file is written.
+
+The prompt is intentionally thorough — every step, branch, and safety rule is written inline so Claude Code gets the full scope on paste. This is the single source of truth for the assisted flow; the blueprint is designed around this prompt, not around a separate spec file.
 
 ````markdown
 I've just cloned CLAUDE-CODE-CLI-AGENTS-blueprint into this directory
-(should be ~/.claude). Plan mode is active.
+(should be ~/.claude). It's a generic multi-agent Claude Code framework that
+needs to be customized for MY environment and MY work style before I use it.
+Plan mode is active. Please do thorough environment discovery, interview me
+with enough questions to close all gaps, and produce a concrete customization
+plan that I approve via ExitPlanMode before any file is touched.
 
-Please read docs/assisted-setup-spec.md — that's the canonical spec for
-the assisted onboarding flow. Follow it exactly, in this order:
+━━━ STEP 1 — READ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Step 1 — READ: read every file listed in the spec's §Step 1.
-  Step 2 — ENVIRONMENT DISCOVERY: scan my machine read-only per §Step 2,
-          then REPORT the findings in a structured summary before asking
-          me anything.
-  Step 3 — INTERVIEW: use AskUserQuestion for every branch in §Step 3.
-          One question at a time; don't assume defaults.
-  Step 4 — PLAN FILE: write a concrete customization plan reflecting my
-          answers + the discovered environment, then call ExitPlanMode
-          for my approval. Nothing gets written until I approve.
-  Step 5 — EXECUTE (only after I approve): follow §Step 5 exactly.
-  Step 6 — If you found an existing ~/.claude setup, follow the merge
-          policy in docs/existing-state-merge.md (never overwrite /
-          merge-only / safe-to-replace lists, mandatory backup first).
-  Step 7 — FINAL SUMMARY per §Step 7.
+Read (in this order):
+  README.md, CLAUDE.md, CUSTOMIZATION.md, TEMPLATE_VARIABLES.md, SECURITY.md,
+  .env.example, docs/event-contract.md, docs/disaster-recovery.md,
+  docs/existing-state-merge.md, config/*.template (all five),
+  agents/*.md (list the filenames), .github/CODEOWNERS,
+  .github/workflows/, scripts/lib/common.sh.
 
-All safety invariants in docs/assisted-setup-spec.md §"Safety invariants"
-apply throughout — no unauthorized pushes, no destructive ops, --dry-run
-before real runs, never commit .env or settings.json or credentials,
-never clobber existing state silently, note missing deps as manual
-follow-ups rather than auto-installing.
+━━━ STEP 2 — ENVIRONMENT DISCOVERY (read-only) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Begin with Step 1, then Step 2, and report before asking me anything.
+Before asking me anything, scan the machine and report findings as a
+structured summary. Adapt every later question to what you find.
+
+  A. Existing ~/.claude state
+     - Does ~/.claude already contain a live Claude Code setup (agents/,
+       hooks/, settings.json, context/, history.jsonl)?
+     - Are there active sessions in context/hive/sessions/?
+     - Are there session-memory files I should preserve
+       (context/shared/patterns/, lessons/, decisions/, projects/*/landing.yaml,
+       memory/MEMORY.md)?
+     - If YES to any: DO NOT overwrite. Plan must merge/preserve, not clobber.
+
+  B. Dependency inventory (report version or "MISSING")
+     - gh (with `gh auth status`), jq, yq, python3, python3-venv, bash (>= 5),
+       git (>= 2.40), systemd --user (or note WSL1 / macOS where it's absent),
+       Optional: docker, docker-compose-v2, shellcheck, msmtp or ssmtp.
+
+  C. Project directory layout
+     - Is ~/github/ present? What's under it?
+     - List directory entries at ~/github/ (one level deep, just names) so I
+       can see what repos live there.
+     - Are any already-cloned repos candidates for the pipeline?
+
+  D. Shell + editor
+     - $SHELL, $EDITOR, OS + distro + kernel, arch (x86_64 / arm64).
+
+  E. Existing cron / systemd timers that might conflict
+     - `crontab -l` summary (count + times touched by user)
+     - `systemctl --user list-timers` summary.
+
+Report findings, then proceed to Step 3.
+
+━━━ STEP 3 — INTERVIEW ME (ask as many AskUserQuestion calls as needed) ━━━
+
+Use AskUserQuestion generously — one well-formed question beats five
+assumptions. Ask all of the following; adapt wording to what you found.
+
+  1. **Identity**
+     - GITHUB_ORG (required)
+     - GITHUB_USER / personal GitHub handle (required)
+     - IANA TIMEZONE (required, e.g. America/New_York)
+     - Primary machine hostname (optional, just for documentation)
+
+  2. **Repo scoping** (branch on my answer):
+     Pick ONE:
+       (a) Scan a project directory path and include ALL repos found there
+           (ask me the path; default ~/github/$GITHUB_ORG/).
+       (b) Cherry-pick a list of repo names.
+       (c) Scan the path but apply INCLUSION or EXCLUSION patterns
+           (ask for globs).
+       (d) Skip repo config for now; I'll populate nightly-repo-profiles
+           manually later.
+
+  3. **Per-repo deploy strategy** (only if repos were scoped)
+     For each selected repo, ask: deploy kind = skip / docker-compose /
+     kubectl / custom-command. Apply sensible guards automatically
+     (`*.env*` deny, `migrations/**/*.sql` explicit-approve).
+
+  4. **Morning-digest delivery channel** (branch on my answer):
+     Pick ONE:
+       (a) Gmail OAuth — walk me through setup-gmail-draft-oauth.sh if it
+           exists in this blueprint, OR walk me through the manual Google
+           Cloud Console OAuth flow (consent screen is operator-gated).
+           Populate GMAIL_OAUTH_CREDENTIALS_PATH + DIGEST_RECIPIENT_EMAIL
+           in .env.
+       (b) SMTP — populate SMTP_HOST/PORT/USER/PASS + DIGEST_RECIPIENT_EMAIL
+           in .env. Check whether msmtp or ssmtp is installed; if neither,
+           note it as a manual follow-up.
+       (c) Local markdown only — no secrets needed; digest writes to
+           ~/.claude/logs/morning-digest-YYYYMMDD.md.
+       (d) GitHub Discussion — populate DIGEST_TARGET_REPO; ask which repo
+           has Discussions enabled.
+       (e) Disable digest entirely.
+
+  5. **Agent roster**
+     List all ~18 agents in agents/ with a one-line purpose. Ask which to
+     KEEP and which to DELETE. A non-telecom team probably drops tel-core/
+     tel-ops; a non-ML team drops ml-core; etc. Trim CLAUDE.md triggers to
+     match the kept set.
+
+  6. **Branching strategy**
+     Pick ONE:
+       (a) GitHub-flow main-only (simplest)
+       (b) feature → master → main (the blueprint's source convention)
+       (c) Trunk-based / other (I'll describe)
+     Update CLAUDE.md §Branch Workflow to match.
+
+  7. **Automation depth**
+     Pick ONE:
+       (a) Full — daytime-harrier + nightly-puffin (17 cron/timer entries)
+       (b) Nightly-only — run overnight stages; skip daytime sweeps
+       (c) Daytime-only — product discovery + mini dispatch; no overnight
+       (d) None — I just want the agents; no automated pipeline
+     If (a)–(c), pick systemd --user timers (preferred) OR crontab.
+
+  8. **Code review / branch protections**
+     - GitHub handles to add to .github/CODEOWNERS
+     - Review policy: require N reviewers / require CI green / other
+
+━━━ STEP 4 — CUSTOMIZATION PLAN (written to plan file, then ExitPlanMode) ━━
+
+Using my answers + the discovery findings, write a concrete plan listing
+exactly which files will be created/modified/deleted, which env vars and
+yaml keys will take which values, which agents will be pruned, and which
+scripts (if any) will be disabled. End with ExitPlanMode so I approve
+before execution.
+
+━━━ STEP 5 — EXECUTE (post-approval) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After I approve the plan via ExitPlanMode:
+
+  1. Create .env from .env.example; fill in the agreed values; do NOT stage.
+  2. Copy each config/*.template → live form; populate per the plan.
+  3. Edit CLAUDE.md (triggers, branching section).
+  4. Delete unused agents/*.md; trim triggers.
+  5. Update .github/CODEOWNERS with my handles.
+  6. Copy settings.json.template → settings.json; show hooks + permissions;
+     ask if I want to tighten anything.
+  7. Run bash scripts/bootstrap-fresh-machine.sh --dry-run; show output;
+     wait for my explicit yes before running without --dry-run.
+  8. If automation selected, run scripts/install-systemd-timers.sh
+     (--dry-run first, then for real after my yes).
+  9. Verify: bash scripts/hive-doctor.sh, bash scripts/clone-doctor.sh,
+     bash scripts/hive-status.sh --observe. Report any red flags.
+
+━━━ STEP 6 — INTEGRATE WITH EXISTING STATE (if applicable) ━━━━━━━━━━━━━━━
+
+If Step 2.A found an existing Claude Code setup:
+
+  - PRESERVE (never overwrite): settings.json, .env, context/hive/sessions/,
+    context/hive/events.ndjson, projects/, history.jsonl, memory/MEMORY.md.
+  - MERGE into (never overwrite, add files only):
+    context/shared/patterns/, context/shared/lessons/,
+    context/shared/decisions/. If a filename collides, keep the existing
+    version and report the conflict to me.
+  - UPDATE (replace with blueprint versions, but back up old first):
+    agents/*, handbook/*, protocols/*, hooks/*, scripts/*.
+    Back up to ~/.claude-pre-blueprint-$(date +%Y%m%d-%H%M%S)/ and tell me
+    where it went.
+  - INSPECT for machine-specific tuning in the existing setup that I'd lose:
+    cron tuning, custom hook paths, non-default tool allowlists. Flag these
+    in the plan BEFORE execution.
+
+  (See docs/existing-state-merge.md for the full policy — this prompt
+  mirrors it inline so you have the rules self-contained on paste.)
+
+━━━ STEP 7 — FINAL SUMMARY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Print a checklist:
+  ✓ Completed automatically
+  ⚠ Manual follow-ups: MCP reconnection at claude.ai/settings/connectors,
+    GitHub PAT rotation reminder (90 days), Google Cloud Console OAuth
+    consent screen (if Gmail chosen), inviting team members to the blueprint
+    fork, cron vs systemd choice confirmation
+  ℹ Where to read more: CUSTOMIZATION.md §"Disable what you don't want",
+    docs/disaster-recovery.md, docs/event-contract.md,
+    docs/existing-state-merge.md
+
+━━━ SAFETY RULES (strict, apply throughout) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Do NOT push to any GitHub repo without my explicit confirmation.
+- Do NOT create issues, PRs, or external resources without asking.
+- Do NOT run destructive operations (rm -rf, git reset --hard,
+  git clean -fd, systemctl disable) without my explicit yes.
+- Prefer --dry-run when a script supports it; show output and ask before
+  the real run.
+- If a value I set conflicts with another config file, flag it and ask me
+  to reconcile rather than guessing.
+- Never commit .env, settings.json, .credentials.json, *.pem, or *.key —
+  run `git status` before every commit and halt if any of those are staged.
+- If you find an existing ~/.claude setup, NEVER clobber it silently.
+  Always back up + report + ask before replacing anything.
+- If a dependency is missing, note it as a manual follow-up rather than
+  auto-installing (user's package manager, not ours).
+
+Begin with Step 1 (READ), then Step 2 (DISCOVERY) and report before Step 3.
 ````
 
-The prompt delegates to [`docs/assisted-setup-spec.md`](docs/assisted-setup-spec.md) rather than inlining all the step definitions — that way if the onboarding flow evolves, the spec is the one place to update and this prompt picks up the change automatically.
-
-If at any step you'd rather skip Claude's guidance and do it yourself, say so — the framework doesn't care which path you take. The manual Quickstart above still works, and [`CUSTOMIZATION.md`](CUSTOMIZATION.md) walks through it in detail.
+Copy everything from ` ```markdown` to the closing ` ``` `, paste it into Claude Code as your first message (with plan mode active), and step through the customization with Claude as your copilot. If at any step you prefer to skip Claude's guidance and do it yourself, say so — the framework doesn't care which path you take. The prompt adapts itself to what your machine actually has; every machine this lands on is different, and the discovery phase exists specifically so nothing gets assumed.
 
 ## Mental model
 
