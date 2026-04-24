@@ -4,7 +4,7 @@
 # Composes the morning digest from the night's events and gh activity,
 # then emits to 4 channels:
 #   1. Local markdown: ~/.claude/context/hive/digests/<date>.md
-#   2. Gmail draft (via claude -p + Gmail MCP) to wes@zyongate.com
+#   2. Gmail draft (via claude -p + Gmail MCP) to your-email@example.com
 #   3. GitHub Discussion on ${GITHUB_ORG:-your-org}/example-repo-v6 (category "Nightly Reports")
 #   4. example-repo main-agent memory file append (auto-discover path)
 
@@ -27,7 +27,7 @@ OWNER="${NIGHTLY_OWNER:-${GITHUB_ORG:-your-org}}"
 DISCUSSION_REPO="${NIGHTLY_DISCUSSION_REPO:-${GITHUB_ORG:-your-org}/example-repo-v6}"
 
 # gh search --owner accepts only a single org. The selector learned multi-org
-# CSV in W19-ID22 (#137) but this script was missed, so a NIGHTLY_OWNER value
+# CSV in EXAMPLE-ID (#137) but this script was missed, so a NIGHTLY_OWNER value
 # like "${GITHUB_ORG:-your-org},${GITHUB_ORG:-your-org}" silently returned [] from every gh search and the
 # digest undercounted ${GITHUB_ORG:-your-org} activity (#145). Loop over CSV owners and
 # concatenate JSON arrays.
@@ -47,7 +47,7 @@ gh_search_multi_owner() {
 EXTERNAL_AGENT_PATH="${EXTERNAL_AGENT_PATH:-$HOME/example-repo-local-llm}"
 
 # Gmail recipient resolution — single source of truth is config/digest-config.yaml
-# (W18-ID10). Precedence: env override > YAML config > hardcoded safety fallback.
+# (EXAMPLE-ID). Precedence: env override > YAML config > hardcoded safety fallback.
 DIGEST_CONFIG="$CLAUDE_HOME/config/digest-config.yaml"
 _CONFIG_RECIPIENT=""
 if [[ -f "$DIGEST_CONFIG" ]]; then
@@ -57,7 +57,7 @@ c = yaml.safe_load(open(os.environ["DIGEST_CONFIG_PATH"])) or {}
 print(((c.get("delivery") or {}).get("gmail_draft") or {}).get("recipient") or "")
 ' 2>/dev/null || echo "")"
 fi
-DIGEST_EMAIL_TO="${NIGHTLY_DIGEST_EMAIL:-${_CONFIG_RECIPIENT:-wes@zyongate.com}}"
+DIGEST_EMAIL_TO="${NIGHTLY_DIGEST_EMAIL:-${_CONFIG_RECIPIENT:-your-email@example.com}}"
 
 mkdir -p "$DIGESTS_DIR"
 DIGEST_MD="$DIGESTS_DIR/${TODAY}.md"
@@ -501,7 +501,7 @@ fi
   fi
   echo ""
 
-  # --- Actions budget (issue #100 / PUFFIN-W18-ID9) ---
+  # --- Actions budget (issue #100 / EXAMPLE-ID) ---
   # Read the most recent actions-budget-monitor PROGRESS/BLOCKED events from
   # events.ndjson and surface one reading per org.
   echo "## Actions Budget"

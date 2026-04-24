@@ -412,7 +412,7 @@ EOF
 
 ```yaml
 version: 1
-session_id: nu-trade_2026-01-11_1430
+session_id: example-repo_2026-01-11_1430
 project_key: example-repo
 workflow_mode: issue-first
 last_updated: 2026-01-11T14:35:00Z

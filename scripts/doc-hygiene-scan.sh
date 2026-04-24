@@ -118,7 +118,7 @@ active = []
 for r in repos:
     if r.get("isArchived"):
         continue
-    # NOTE: forks (e.g. example-repo-AI forked from psurentax) are INCLUDED because
+    # NOTE: forks (e.g. example-repo forked from psurentax) are INCLUDED because
     # the user owns and maintains them in ${GITHUB_ORG:-your-org} as canonical. Archive-only is the
     # filter. To exclude a specific fork, add it to skip_paths handling or profile overrides.
     pushed = r.get("pushedAt")
@@ -264,7 +264,7 @@ SAFETY
 - Never force-push.
 - Never touch files whose basename is in protected_basenames.
 - Never delete files with a commit in the last 2h.
-- If max_deletions_per_pr is 0 (e.g. example-repo-AI), produce only the audit
+- If max_deletions_per_pr is 0 (e.g. example-repo), produce only the audit
   issue, no cleanup PR.
 - If you find ROADMAP-proposals.md, LEAVE IT — that belongs to PROD-00.
 - Prefix deletion commit message with "chore(doc-hygiene):" for attribution.

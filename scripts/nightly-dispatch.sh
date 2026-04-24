@@ -86,7 +86,7 @@ hive_heartbeat "nightly-dispatch-${STAGE}"
 [[ -f "$PROFILES" ]] || { escalate "PROFILES_MISSING" "$PROFILES"; exit 10; }
 [[ -d "$HANDBOOK" ]] || { escalate "HANDBOOK_MISSING" "$HANDBOOK"; exit 10; }
 
-# --- SSH preflight (issue #69 / PUFFIN-S3, fixed by W18-ID16) ---
+# --- SSH preflight (issue #69 / PUFFIN-S3, fixed by EXAMPLE-ID) ---
 # Use BatchMode=yes + 10s timeout so cron never hangs on a missing agent.
 #
 # IMPORTANT: `ssh -T git@github.com` returns exit code 1 on SUCCESSFUL auth
@@ -115,7 +115,7 @@ export SSH_PUSH_DISABLED
 
 # --- Refuse deprecated paths ---
 if echo "$PWD" | grep -qE '/home/[^/]+/orchestrator(/|$)'; then
-  escalate "DEPRECATED_PATH" "refusing to operate under /home/*/orchestrator (duplicate of example-repo-AI)"
+  escalate "DEPRECATED_PATH" "refusing to operate under /home/*/orchestrator (duplicate of example-repo)"
   exit 11
 fi
 
@@ -361,7 +361,7 @@ PROMPT
   # Retry on transient failures (exit 124=timeout, 130=SIGINT, 137=SIGKILL).
   # Non-transient exit codes go straight to BLOCKED without retry.
   # Credential-expiry exits are detected via stderr grep and escalate to a
-  # human-visible GitHub issue immediately — no retry (W18-ID13).
+  # human-visible GitHub issue immediately — no retry (EXAMPLE-ID).
   local attempt=0
   local max_attempts=2
   local claude_exit=0
@@ -385,9 +385,9 @@ PROMPT
     # On match, escalate to human immediately — do NOT retry.
     if grep -qiE 'unauthorized|credentials|token.*expired|auth.*required|not.*logged.*in' "$_stderr_tmp" 2>/dev/null; then
       emit_event "dispatch" "SPECIALIST_FAILED" "$name stage=$STAGE exit=$claude_exit attempts=$attempt (CREDENTIAL_EXPIRED)"
-      escalate "CREDENTIAL_EXPIRED" "$name ($STAGE): claude -p exited $claude_exit — workspace credentials expired on ${USER}-optiplex. Re-run \`claude auth login\`."
+      escalate "CREDENTIAL_EXPIRED" "$name ($STAGE): claude -p exited $claude_exit — workspace credentials expired on ${USER}-workstation. Re-run \`claude auth login\`."
       # Open a blocked-human GitHub issue (idempotent).
-      local _cred_title="[AUTH] Claude workspace credentials expired on ${USER}-optiplex — re-run \`claude auth login\`"
+      local _cred_title="[AUTH] Claude workspace credentials expired on ${USER}-workstation — re-run \`claude auth login\`"
       local _open_count
       _open_count="$(gh issue list \
         --repo ${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint \
@@ -404,9 +404,9 @@ PROMPT
 
 \`claude -p\` exited $claude_exit with auth-failure output. The pipeline has stopped retrying and emitted a \`BLOCKED:CREDENTIAL_EXPIRED\` event.
 
-**Action required**: SSH into ${USER}-optiplex and run \`claude auth login\`, then re-queue the affected stage.
+**Action required**: SSH into ${USER}-workstation and run \`claude auth login\`, then re-queue the affected stage.
 
-_Auto-opened by nightly-dispatch.sh (W18-ID13)_" 2>/dev/null || true
+_Auto-opened by nightly-dispatch.sh (EXAMPLE-ID)_" 2>/dev/null || true
       fi
       return 0
     fi
@@ -424,8 +424,8 @@ _Auto-opened by nightly-dispatch.sh (W18-ID13)_" 2>/dev/null || true
   if [[ "$claude_exit" -eq 0 ]]; then
     emit_event "dispatch" "SPECIALIST_COMPLETE" "$name stage=$STAGE attempts=$attempt"
     # C2 post-merge: retrigger CI on master after DOC-00/auto-merge completes
-    # (issue #93 / PUFFIN-W18-ID2, fixed in #146). Derive owner from
-    # local_path's parent dir so ${GITHUB_ORG:-your-org} repos (example-repo, CCS, etc.)
+    # (issue #93 / EXAMPLE-ID, fixed in #146). Derive owner from
+    # local_path's parent dir so ${GITHUB_ORG:-your-org} repos (example-repo, example-repo, etc.)
     # don't get a hardcoded ${GITHUB_ORG:-your-org}/ prefix that 404s. `|| true` guarantees
     # a transient retrigger failure cannot fail the whole C2 stage — the
     # specialist work has already been merged by this point.

@@ -304,17 +304,17 @@ handoff:
 
   # Deliverables
   artifacts:
-    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo-AI/docs/JWT_AUTH_IMPLEMENTATION_PLAN.md"
+    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo/docs/JWT_AUTH_IMPLEMENTATION_PLAN.md"
       type: "documentation"
       status: "complete"
       sha256: "abc123..."  # File hash for verification
 
-    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo-AI/docs/api-schemas/auth-endpoints.yaml"
+    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo/docs/api-schemas/auth-endpoints.yaml"
       type: "schema"
       status: "complete"
       sha256: "def456..."
 
-    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo-AI/database_schema/006_auth_tokens.sql"
+    - path: "${HOME}/github/${GITHUB_ORG:-your-org}/example-repo/database_schema/006_auth_tokens.sql"
       type: "database_schema"
       status: "complete"
       sha256: "ghi789..."

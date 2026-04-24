@@ -4,9 +4,9 @@ This replaces the session-tethered `CronCreate` registration (B2) with systemd `
 
 ## Why
 
-Anthropic's `CronCreate` silently ignored `durable: true` on CLI 2.1.114 — all 15 jobs landed as `[session-only]` and died with the session. That killed the "24/7" guarantee. See PUFFIN-B2a (#88).
+Anthropic's `CronCreate` silently ignored `durable: true` on CLI 2.1.114 — all 15 jobs landed as `[session-only]` and died with the session. That killed the "24/7" guarantee. See EXAMPLE-STAGE (#88).
 
-systemd `--user` timers are the standard Linux answer: with `loginctl enable-linger $USER` (already on for `${USER}` on ${USER}-optiplex), the user's service manager runs even without a logged-in session. Shell scripts fire on cron. Scripts that need `claude -p` use the user's persisted auth token (from `~/.claude/.credentials.json`, `chmod 600`) — no interactive login required at fire time.
+systemd `--user` timers are the standard Linux answer: with `loginctl enable-linger $USER` (already on for `${USER}` on ${USER}-workstation), the user's service manager runs even without a logged-in session. Shell scripts fire on cron. Scripts that need `claude -p` use the user's persisted auth token (from `~/.claude/.credentials.json`, `chmod 600`) — no interactive login required at fire time.
 
 ## Install
 

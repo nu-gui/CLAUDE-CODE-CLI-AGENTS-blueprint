@@ -28,7 +28,7 @@ NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ISO_WEEK="$(date +%G-W%V)"             # e.g. 2026-W17 (ISO week)
 SPRINT_NAME="Sprint-${ISO_WEEK}"
 OWNER="${NIGHTLY_OWNER:-${GITHUB_ORG:-your-org}}"
-MAX_SPRINT_ISSUES="${SPRINT_MAX_ISSUES:-16}"  # W18-ID17: doubled default
+MAX_SPRINT_ISSUES="${SPRINT_MAX_ISSUES:-16}"  # EXAMPLE-ID: doubled default
 
 # Run modes (issue #34):
 #   evening (default) — full 21:00 pass, up to 8 issues, nightly-candidate label

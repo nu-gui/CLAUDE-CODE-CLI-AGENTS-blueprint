@@ -61,7 +61,7 @@ Relevant PRs:
 - **PR #108** — specialist prompts explicitly instruct "Do NOT write to events.ndjson directly"
 - **PR #112** — heartbeat writes happen at wrapper level via `hive_heartbeat()`; specialists do not heartbeat themselves
 
-### W18-ID13 credential-expiry detection
+### EXAMPLE-ID credential-expiry detection
 
 The wrapper reads specialist **stderr** at the wrapper level to detect auth failures (e.g. `gh: authentication required`). Specialists do not need to emit a BLOCKED event — the wrapper detects and emits it.
 
@@ -152,7 +152,7 @@ Do not rely on this hook to catch specialist lifecycle events from `claude -p` i
 
 | | |
 |--|--|
-| **Symptom** | Specialist loops, repeatedly retrying a Write or Edit call with variations of the same path. Exit 1 after timeout. Logs show `Error: path outside allowed directories`. This was the class of bug hit in W18-ID4 / issues #74 #75 #76. |
+| **Symptom** | Specialist loops, repeatedly retrying a Write or Edit call with variations of the same path. Exit 1 after timeout. Logs show `Error: path outside allowed directories`. This was the class of bug hit in EXAMPLE-ID / issues #74 #75 #76. |
 | **Root cause** | `--add-dir` was omitted for a path the specialist needs to write (e.g. a worktree path outside cwd, or the hive directory). The specialist sees the denial, retries with path variations, and eventually gives up. |
 | **Fix** | Add the missing directory with `--add-dir <path>` in the wrapper invocation. Check the wrapper's `claude -p` call against the paths the specialist actually writes. Also confirm `settings.json` allowlist covers hive paths. |
 
@@ -183,4 +183,4 @@ Before any new headless spawn:
 
 ---
 
-*Last updated: 2026-04-19 | Issue: PUFFIN-W18-ID11 | PR #102*
+*Last updated: 2026-04-19 | Issue: EXAMPLE-ID | PR #102*

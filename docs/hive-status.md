@@ -68,7 +68,7 @@ JSON `status` values: `healthy` | `degraded` | `blocked`
 
 ```bash
 # In crontab: run every 30 minutes, mail on failure
-*/30 * * * * bash ~/.claude/scripts/hive-status.sh --since 30m --json > /tmp/hive-status.json || mail -s "PUFFIN ALERT" wes@zyongate.com < /tmp/hive-status.json
+*/30 * * * * bash ~/.claude/scripts/hive-status.sh --since 30m --json > /tmp/hive-status.json || mail -s "PUFFIN ALERT" your-email@example.com < /tmp/hive-status.json
 ```
 
 ### Dashboard polling (jq pipeline)

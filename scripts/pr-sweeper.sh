@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # scripts/pr-sweeper.sh
 #
-# Org-wide PR sweeper — read-only inventory + label (PUFFIN-W18-ID15 / issue #113).
-# Extended with --triage mode (PUFFIN-W19-ID10 / issue #131).
+# Org-wide PR sweeper — read-only inventory + label (EXAMPLE-ID / issue #113).
+# Extended with --triage mode (EXAMPLE-ID / issue #131).
 #
 # Enumerates every open PR across ${GITHUB_ORG:-your-org} + ${GITHUB_ORG:-your-org}, applies the SWEEP_READY
 # heuristic, and (in --apply mode) labels qualifying PRs and posts a one-time

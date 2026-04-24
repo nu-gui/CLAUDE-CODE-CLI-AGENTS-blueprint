@@ -8,7 +8,7 @@ Named after the long-range, low-altitude hunting raptor: systematic, broad-cover
 
 ## Cadence
 
-All times local time (UTC+2). Source of truth: `config/nightly-schedule.yaml`.
+All times local time (your local timezone). Source of truth: `config/nightly-schedule.yaml`.
 
 | Time (local time) | Cron | Stage | Script | Purpose |
 |---|---|---|---|---|
@@ -31,7 +31,7 @@ All times local time (UTC+2). Source of truth: `config/nightly-schedule.yaml`.
 
 > **Note**: 13:13 is intentionally skipped (lunch). Product-discovery fires on weekdays only (`1-5`); mini-dispatch and sprint stages fire every day.
 >
-> **Upcoming**: `actions-budget-monitor.sh` at `08:00` is already in `nightly-schedule.yaml`; a dedicated `pr-sweeper` at `08:00` is tracked as W18-ID15c follow-up.
+> **Upcoming**: `actions-budget-monitor.sh` at `08:00` is already in `nightly-schedule.yaml`; a dedicated `pr-sweeper` at `08:00` is tracked as EXAMPLE-IDc follow-up.
 
 ---
 
