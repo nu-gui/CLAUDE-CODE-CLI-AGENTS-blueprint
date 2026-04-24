@@ -1,0 +1,25 @@
+name: sanitization-check
+
+# Gate: every PR and push to master/main must pass the blueprint-sanitization
+# check (scripts/check-sanitized.sh). Catches accidental re-introduction of
+# the original upstream maintainer's personal identifiers, infrastructure
+# references, or project-internal names.
+#
+# Forks that have customized the blueprint should edit scripts/check-sanitized.sh
+# to reflect their own environment, or add `if: false` to the job below to
+# disable this check entirely.
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+jobs:
+  sanitization:
+    name: leak pattern scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run sanitization check
+        run: bash scripts/check-sanitized.sh
