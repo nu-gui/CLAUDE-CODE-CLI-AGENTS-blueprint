@@ -1,0 +1,308 @@
+# Governance Policy — agent-grantable approval rules
+#
+# Tier model (mechanical assignment from PR diff × paths × labels):
+#   0 — already auto-mergeable (Dependabot, lockfile-only) → existing sweeper
+#   1 — system-authored CI/build/lint fixes, surgical, no production code
+#   2 — small surgical fixes inside one module                  (NOT YET ENABLED)
+#   3 — cross-module / schema / migrations / API contracts      (NOT YET ENABLED)
+#   4 — ALWAYS HUMAN. Hard bright line. No agent override possible.
+#
+# This file ships the **Tier 1 MVP** only. Tier 2/3 placeholders are
+# documented but their `enabled: false` flag prevents the auto-approver from
+# acting on them. Promote a tier by flipping its enabled flag in a PR that
+# itself meets tier 4 (i.e. requires you, Team Lead, to merge).
+#
+# CHANGELOG:
+#   2026-05-02  Initial Tier 1 MVP. Approver: SUP-00 alone, on Sourcery+Security
+#               green, ≤30 line diffs, system-authored only.
+
+version: 1
+
+# --------------------------------------------------------------------------
+# Tier 4 — ALWAYS HUMAN. Mechanical, no agent override.
+# Any PR touching ANY of these path patterns is locked to tier 4 regardless
+# of size, author, or CI state. The auto-approver never operates on them.
+# --------------------------------------------------------------------------
+always_human:
+  # Path patterns matched via Python fnmatch. Each pattern listed in two
+  # forms (bare + prefixed-with-*) so files at any depth are caught.
+  paths:
+    # Secrets and credentials
+    - "*.env"
+    - "*.env.*"
+    - ".env*"
+    - "*.env*"
+    - "secrets/*"
+    - "*secrets/*"
+    - "credentials*"
+    - "*credentials*"
+    - "credential*"
+    - "*credential*"
+    - "auth/*"
+    - "*auth/*"
+    - "oauth/*"
+    - "*oauth/*"
+    - "jwt/*"
+    - "*jwt/*"
+
+    # Database schemas + migrations (single byte typo = data loss)
+    - "*.sql"
+    - "*.sql.*"
+    - "migrations/*"
+    - "*migrations/*"
+    - "alembic/versions/*"
+    - "*alembic/versions/*"
+    - "prisma/schema.prisma"
+    - "*prisma/schema.prisma"
+
+    # Telecom signaling (single typo = call routing breakage)
+    - "kamailio.cfg"
+    - "*kamailio.cfg"
+    - "kamailio.conf"
+    - "*kamailio.conf"
+    - "dispatcher.list"
+    - "*dispatcher.list"
+    - "dialplan.xml"
+    - "*dialplan.xml"
+
+    # Branch protection / repo governance
+    - ".github/CODEOWNERS"
+    - ".github/branch-protection*"
+    - ".github/rulesets/*"
+    - ".github/workflows/release*"
+
+    # Production deploy targets
+    - "docker-compose.prod*"
+    - "*docker-compose.prod*"
+    - "k8s/prod/*"
+    - "*k8s/prod/*"
+    - "terraform/*/prod/*"
+    - "*terraform/*/prod/*"
+    - "infra/prod/*"
+    - "*infra/prod/*"
+
+    # The governance policy file itself — locks the rules
+    - "config/governance-policy.yaml"
+
+    # Trading strategies (real money in example-repo)
+    - "strategies/*"
+    - "*strategies/*"
+
+    # Foundational docs — too core to ever auto-approve, even cosmetic edits.
+    # CLAUDE.md is the authority for every agent's behavior; handbook is the
+    # operational reference that agents read at runtime; protocols/* defines
+    # cross-agent coordination rules; agents/*.md is the per-agent contract.
+    # The workspace settings.json gates every Bash/Write/Edit permission for
+    # every claude -p invocation.
+    # (Added 2026-05-02 alongside the markdown tier-1 expansion — SUP-00
+    # gets to approve doc-cleanup PRs across the rest of the tree, but
+    # never the files that define how SUP-00 itself behaves.)
+    #
+    # Path-pattern note: each filename pattern is listed in two forms (bare
+    # + `*`-prefixed) because Python's `fnmatch` `*` matches `/` greedily, so
+    # `*CLAUDE.md` covers any-depth subdirectory CLAUDE.md while `CLAUDE.md`
+    # covers the workspace-root one. The `**` form (gitignore-style) does NOT
+    # work in fnmatch — see scripts/lib/risk-classifier.sh for the matcher.
+    # Top-level READMEs are intentionally NOT locked here; only the doc files
+    # that define agent behaviour. README updates flow through tier-1.
+    - "CLAUDE.md"
+    - "*CLAUDE.md"
+    - "handbook/*.md"
+    - "*handbook/*.md"
+    - "handbook/*/*.md"
+    - "*handbook/*/*.md"
+    - "protocols/*.md"
+    - "*protocols/*.md"
+    - "protocols/*/*.md"
+    - "*protocols/*/*.md"
+    - "agents/*.md"
+    - "*agents/*.md"
+    # Canonical settings.json only — bare and at-any-depth via `*/`. We
+    # deliberately avoid `*settings.json` (suffix-only) because that would
+    # also match `project-settings.json`, `usersettings.json`, etc., which
+    # may be unrelated config files that shouldn't be tier-4-locked.
+    - "settings.json"
+    - "*/settings.json"
+    - "*/*/settings.json"
+
+# --------------------------------------------------------------------------
+# Tier 1 — Agent-approvable. SUP-00 alone. System-authored CI/build/lint.
+# --------------------------------------------------------------------------
+tier_1:
+  enabled: true
+
+  # ALL of these must be true for a PR to qualify:
+  match_all:
+    # System-authored signal: PR has nightly-automation label
+    labels_required: [nightly-automation]
+
+    # Title pattern — must match one of these prefixes. Allows optional
+    # `[AGENT-NAME]` prefix that the nightly dispatcher attaches before
+    # routing (e.g. `[INFRA-CORE] chore(ci): ...`).
+    title_pattern: '^(\[[A-Z][A-Z0-9-]*\] )?(chore|fix)\((ci|nightly-sweep|nightly-puffin|build|lint|deps-dev|tests|tsconfig)\)'
+
+    # Diff size guard
+    max_lines_changed: 30
+    max_files_changed: 5
+
+    # Path allow-list — the diff MAY ONLY touch these paths.
+    # NOTE on glob style: matched via Python `fnmatch.fnmatch`. Unlike
+    # gitignore, fnmatch's `*` matches `/`, so a single `*` is enough to
+    # match arbitrary depth. Each filename pattern is listed in two forms
+    # — bare (root-level) and prefixed — to cover both cases reliably.
+    paths_allowed:
+      - ".github/workflows/*"
+      - "*.eslintrc*"
+      - "*/.eslintrc*"
+      - "*eslintrc*"
+      - "eslint.config.*"
+      - "*eslint.config.*"
+      - "biome.json"
+      - "*biome.json"
+      - "biome.jsonc"
+      - "*biome.jsonc"
+      - "prettierrc*"
+      - "*prettierrc*"
+      - ".prettier*"
+      - "*.prettier*"
+      - "vitest.config.*"
+      - "*vitest.config.*"
+      - "vitest.workspace.*"
+      - "*vitest.workspace.*"
+      - "jest.config.*"
+      - "*jest.config.*"
+      - "tsconfig*.json"
+      - "*tsconfig*.json"
+      - "tsconfig*.jsonc"
+      - "*tsconfig*.jsonc"
+      - "package.json"          # engines/scripts only — see paths_forbidden
+      - "*package.json"
+      - "pnpm-workspace.yaml"
+      - "*pnpm-workspace.yaml"
+      - ".gitignore"
+      - "*.gitignore"
+      - ".gitleaksignore"
+      - "*.gitleaksignore"
+      - "test-helper*.ts"
+      - "*test-helper*.ts"
+      - "test-helpers.ts"
+      - "*test-helpers.ts"
+      - "tests/helpers*"
+      - "*tests/helpers*"
+      - "__tests__/helpers/*"
+      - "*__tests__/helpers/*"
+
+      # Documentation (added 2026-05-02 — DOC-00 cleanup sweep)
+      # Markdown anywhere; READMEs, CHANGELOGs, CONTRIBUTING. Tier-4
+      # always_human paths above (CLAUDE.md, handbook/, protocols/,
+      # agents/, governance-policy.yaml) override these via the bright
+      # line — those keep human-merge regardless of how small the diff is.
+      - "*.md"
+      - "*/*.md"
+      - "*/*/*.md"
+      - "*/*/*/*.md"
+      - "*/*/*/*/*.md"
+      - "README*"
+      - "*README*"
+      - "CHANGELOG*"
+      - "*CHANGELOG*"
+      - "CONTRIBUTING*"
+      - "*CONTRIBUTING*"
+
+    # Path deny-list — even a single touched path here disqualifies tier 1
+    paths_forbidden:
+      - "**/dependencies/*"      # package.json deps changes need tier 2+
+      - "**/yarn.lock"           # lockfiles handled separately by Dependabot
+      - "**/pnpm-lock.yaml"      # idem
+      - "**/package-lock.json"   # idem
+
+    # CI gates (gh statusCheckRollup names that MUST be SUCCESS)
+    required_checks_success:
+      - "Sourcery review"
+      - "Security Scan"
+
+    # CI checks that ARE allowed to be FAILURE for tier 1
+    # (because those are the very thing the PR is trying to fix)
+    allowed_failing_checks:
+      - "PR Validation"
+      - "check-branch-naming"
+      - "Run tests with coverage"
+
+    # Mergeable state (any of these accepted)
+    mergeable_state:
+      - "MERGEABLE"
+      # CONFLICTING is NOT acceptable — needs rebase first
+
+  approver: sup-00-qa-governance
+  # SUP-00 runs in approve mode: reviews the diff, on PASS posts
+  # `gh pr review --approve` + adds `sweep-ready-to-merge` label.
+
+  # Per-fire safety cap. Exceeding this leaves the surplus for next fire.
+  per_run_cap: 5
+
+  # Audit-log every decision to this file (separate from events.ndjson)
+  audit_log: "context/hive/governance-decisions.ndjson"
+
+  # Comment template posted on each approved PR (audit trail)
+  approval_comment_template: |
+    🤖 **Tier-1 governance auto-approval**
+
+    This PR was auto-approved under the Tier-1 policy in `config/governance-policy.yaml`:
+    - Author: system (`nightly-automation` label present)
+    - Title pattern: `chore|fix(ci|nightly-sweep|...)`
+    - Diff size: %DIFF_LINES% lines / %DIFF_FILES% files (cap: 30 / 5)
+    - Paths touched: %DIFF_PATHS%
+    - Required checks: ✅ Sourcery, ✅ Security Scan
+    - Allowed-failing: %ALLOWED_FAILING% (these are the build state this PR is fixing)
+
+    Reviewer: `sup-00-qa-governance` (verdict: %SUP00_VERDICT%)
+
+    Revertable for 24h via the `governance-revert-candidate` label.
+    Audit entry: see `governance-decisions.ndjson`.
+
+# --------------------------------------------------------------------------
+# Tier 2/3 — placeholders, NOT enabled. Promotion to enabled=true is itself
+# tier-4-locked (this file is in always_human.paths above), so requires
+# Team Lead to merge a policy-change PR.
+# --------------------------------------------------------------------------
+tier_2:
+  enabled: false
+  # Future scope: small surgical fixes inside one module, ≤100 lines, 1
+  # specialist + SUP-00 must both approve. Do not ship without a week of
+  # tier-1 audit data.
+
+tier_3:
+  enabled: false
+  # Future scope: cross-module changes. 2 domain agents + SUP-00 (3-of-3).
+
+# --------------------------------------------------------------------------
+# Per-repo overrides — elevate specific paths above their default tier.
+# Lower tiers via override is FORBIDDEN (always_human paths cannot be
+# downgraded; tier_1 paths can be elevated to tier 4 via this map).
+# --------------------------------------------------------------------------
+per_repo_overrides:
+  # example-repo: the auth surface area is rich; lock auth-helper paths.
+  example-repo:
+    elevate_paths:
+      - path: "src/auth/**"
+        tier: 4
+      - path: "src/middleware/auth*"
+        tier: 4
+      - path: "src/routes/auth*"
+        tier: 4
+
+  # example-repo: production trading strategies already in always_human, but
+  # also lock the orchestrator (single-bug = real money loss).
+  example-repo:
+    elevate_paths:
+      - path: "src/orchestrator/**"
+        tier: 4
+      - path: "src/wallets/**"
+        tier: 4
+
+  # example-repo: AI pipeline + Kamailio. The pipeline-orchestrator is
+  # already api-gov-review-required in repo profiles; lock to tier 4 here.
+  example-repo:
+    elevate_paths:
+      - path: "pipeline-orchestrator/**"
+        tier: 4

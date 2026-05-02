@@ -4,7 +4,7 @@
 # Composes the morning digest from the night's events and gh activity,
 # then emits to 4 channels:
 #   1. Local markdown: ~/.claude/context/hive/digests/<date>.md
-#   2. Gmail draft (via claude -p + Gmail MCP) to your-email@example.com
+#   2. Gmail draft (via direct Gmail API / scripts/lib/gmail_draft.py) — recipient from config
 #   3. GitHub Discussion on ${GITHUB_ORG:-your-org}/example-repo-v6 (category "Nightly Reports")
 #   4. example-repo main-agent memory file append (auto-discover path)
 
@@ -80,9 +80,14 @@ hive_heartbeat "morning-digest"
 # --- Aggregate events since yesterday midnight UTC ---
 SINCE_EPOCH="$(date -u -d "$YEST 23:00:00" +%s 2>/dev/null || echo 0)"
 
+# Bug found 2026-05-01: `startswith("nightly-")` excluded prod-00 (sid="prod-..."),
+# pr-sweeper (sid="standalone-sweep"), closure-watcher (sid="closure-..."), and
+# actions-budget-monitor — every aggregation downstream that filters NIGHT_EVENTS
+# by sid prefix returned zero, e.g. "PROD-00 runs: 0 complete, 0 blocked, 0 total"
+# while PROD-00 was actually running. Timestamp window already scopes to yesterday
+# 23:00 UTC onward; the sid filter was redundant + actively harmful.
 NIGHT_EVENTS="$(jq -c --argjson s "$SINCE_EPOCH" '
   select(.ts | sub("\\..*Z$"; "Z") | fromdateiso8601 >= $s)
-  | select(.sid | tostring | startswith("nightly-"))
 ' "$EVENTS" 2>/dev/null || echo "")"
 
 # --- Pull gh activity since yesterday 23:00 UTC ---
@@ -369,7 +374,14 @@ fi
     | select((.detail // "") | test("^roadmap-case-conflict "))
     | .detail
   ' "$EVENTS" 2>/dev/null | sort -u || echo "")"
-  CONFLICT_COUNT="$(echo "$ROADMAP_CONFLICTS" | grep -c 'roadmap-case-conflict' 2>/dev/null || echo 0)"
+  # grep -c exits 1 with stdout "0" when no matches. Under set -euo
+  # pipefail (top of script), this aborts the whole digest — silently
+  # truncating the output mid-write, which is what 04-25 + 04-26 ran
+  # into after PR #173 attempted to fix the `|| echo 0` "0\n0" bug.
+  # Use `|| true` to swallow the exit code without adding a second
+  # "0" to stdout. grep -c already prints "0" on empty input.
+  CONFLICT_COUNT="$(echo "$ROADMAP_CONFLICTS" | grep -c 'roadmap-case-conflict' 2>/dev/null || true)"
+  CONFLICT_COUNT="${CONFLICT_COUNT:-0}"
   if [[ "$CONFLICT_COUNT" -gt 0 ]]; then
     echo "## Repos with ROADMAP case conflict (action required)"
     echo ""
@@ -401,12 +413,28 @@ fi
 
   echo "## Stale PRs touched overnight by sweeper"
   echo ""
-  SWEEP_EVENTS="$(echo "$NIGHT_EVENTS" | jq -s '[.[] | select(.detail // "" | test("chore\\(nightly-sweep\\)|nightly-puffin sweeper"; "i"))]' 2>/dev/null || echo '[]')"
-  SWEEP_COUNT="$(echo "$SWEEP_EVENTS" | jq 'length')"
-  if [[ "$SWEEP_COUNT" == "0" ]]; then
-    echo "_No sweeper actions logged (either nothing to triage or events missed the pattern)._"
+  # Surface pr-sweeper COMPLETE events + rebase-pr BLOCKED events directly
+  # (the previous filter searched for `chore(nightly-sweep)` text in details
+  # that the sweeper never emits — always reported "no events" while sweeper
+  # was actually running and failing — see 2026-04-29 → 05-01 digests).
+  SWEEP_COMPLETE="$(echo "$NIGHT_EVENTS" | jq -s '[.[] | select(.agent == "pr-sweeper" and .event == "COMPLETE")]' 2>/dev/null || echo '[]')"
+  REBASE_BLOCKS="$(echo "$NIGHT_EVENTS" | jq -s '[.[] | select(.agent == "rebase-pr" and .event == "BLOCKED")]' 2>/dev/null || echo '[]')"
+  SC_COUNT="$(echo "$SWEEP_COMPLETE" | jq 'length')"
+  RB_COUNT="$(echo "$REBASE_BLOCKS" | jq 'length')"
+  if [[ "$SC_COUNT" == "0" && "$RB_COUNT" == "0" ]]; then
+    echo "_No sweeper or rebase-pr events in the last 24h._"
   else
-    echo "$SWEEP_EVENTS" | jq -r '.[] | "- [\(.agent)] \(.detail)"' | head -20
+    if [[ "$SC_COUNT" -gt 0 ]]; then
+      echo "$SWEEP_COMPLETE" | jq -r '.[] | "- pr-sweeper @ \(.ts): \(.detail)"' | head -10
+    fi
+    if [[ "$RB_COUNT" -gt 0 ]]; then
+      echo ""
+      echo "**Auto-rebase failures (manual conflict resolution required):**"
+      # Dedup by (repo#PR + reason) so the same persistent conflict doesn't
+      # spam the digest across multiple sweep runs.
+      echo "$REBASE_BLOCKS" \
+        | jq -r '[.[] | .detail] | unique | .[] | "- \(.)"' | head -20
+    fi
   fi
   echo ""
 
@@ -518,14 +546,18 @@ fi
     # previously hardcoded to ${GITHUB_ORG:-your-org} + ${GITHUB_ORG:-your-org} only.
     IFS=',' read -ra _budget_orgs <<< "$OWNER"
     for _org in "${_budget_orgs[@]}"; do
+      # `last` on empty array returns JSON null; without `select(. != null)`
+      # the next pipe runs on null and `jq -r` emits the literal string "null"
+      # which then looks like a real reading downstream (cause of "BLOCKED — null"
+      # in the 2026-04-30/05-01 digests).
       LATEST_READING="$(echo "$BUDGET_EVENTS" \
         | jq -r --arg o "$_org" \
             '[.[] | select(.event == "PROGRESS") | select(.detail | tostring | test($o; "i"))]
-             | sort_by(.ts) | last | "\(.ts) \(.detail)"' 2>/dev/null || echo "")"
+             | sort_by(.ts) | last | select(. != null) | "\(.ts) \(.detail)"' 2>/dev/null || echo "")"
       LATEST_BLOCK="$(echo "$BUDGET_EVENTS" \
         | jq -r --arg o "$_org" \
             '[.[] | select(.event == "BLOCKED") | select(.detail | tostring | test($o; "i"))]
-             | sort_by(.ts) | last | .detail' 2>/dev/null || echo "")"
+             | sort_by(.ts) | last | select(. != null) | .detail' 2>/dev/null || echo "")"
       if [[ -n "$LATEST_BLOCK" ]]; then
         echo "- **${_org}**: BLOCKED — ${LATEST_BLOCK}"
       elif [[ -n "$LATEST_READING" ]]; then
@@ -534,6 +566,163 @@ fi
         echo "- **${_org}**: no reading yet"
       fi
     done
+  fi
+  echo ""
+
+  # --- Governance auto-approvals (added 2026-05-02, Tier-1 MVP) ---
+  # Reads governance-decisions.ndjson — the audit log written by
+  # scripts/governance-auto-approve.sh. Surfaces approvals + rejections
+  # so every machine-grantable approval is visible in your morning email,
+  # not just the resulting merges.
+  echo "## Governance auto-approvals (last 24h)"
+  echo ""
+  GOV_LOG="$HIVE/governance-decisions.ndjson"
+  if [[ -f "$GOV_LOG" ]]; then
+    GOV_ENTRIES="$(jq -c --argjson c "$SINCE_EPOCH" '
+      select(.ts | sub("\\..*Z$"; "Z") | fromdateiso8601 >= $c)
+    ' "$GOV_LOG" 2>/dev/null | jq -s '.')"
+    GOV_COUNT="$(echo "$GOV_ENTRIES" | jq 'length')"
+    if [[ "${GOV_COUNT:-0}" == "0" ]]; then
+      echo "_No governance decisions in window — auto-approver hasn't fired or had no Tier-1 candidates._"
+    else
+      # Count by decision type (only count apply-mode entries; dry-run
+      # decisions are noise from manual operator runs).
+      APPROVED="$(echo "$GOV_ENTRIES" | jq '[.[] | select(.mode == "apply" and .decision == "approved")] | length')"
+      REJECTED="$(echo "$GOV_ENTRIES" | jq '[.[] | select(.mode == "apply" and .decision == "rejected")] | length')"
+      ERRORED="$(echo "$GOV_ENTRIES"  | jq '[.[] | select(.mode == "apply" and .decision == "errored")] | length')"
+      echo "- Approved: ${APPROVED:-0} | Rejected: ${REJECTED:-0} | Errored: ${ERRORED:-0}"
+      echo ""
+      # List apply-mode decisions inline
+      LISTING="$(echo "$GOV_ENTRIES" | jq -r '
+        [.[] | select(.mode == "apply" and (.decision == "approved" or .decision == "rejected"))]
+        | sort_by(.ts) | .[]
+        | "- \(if .decision == "approved" then "✅" else "🔴" end) [\(.repo)#\(.pr)](https://github.com/\(.repo)/pull/\(.pr)) — \(.decision) (tier \(.tier), \(.reasoning | tostring | .[0:80]))"' 2>/dev/null | head -15)"
+      if [[ -n "$LISTING" ]]; then
+        echo "$LISTING"
+      fi
+      # Audit trail pointer
+      echo ""
+      echo "_Full audit log: \`context/hive/governance-decisions.ndjson\` — every decision (including dry-run) recorded._"
+    fi
+  else
+    echo "_No \`governance-decisions.ndjson\` yet — auto-approver hasn't run in apply mode._"
+  fi
+  echo ""
+
+  # --- Pipeline smoke (added 2026-05-02, weekly Sunday 03:00 local time) ---
+  # smoke-test-pipeline.sh writes a single COMPLETE event with verdict +
+  # per-phase status. We surface the most recent within the last 8 days
+  # (covers 1 weekly fire + ad-hoc operator runs).
+  echo "## Pipeline smoke (last run)"
+  echo ""
+  WEEK_AGO_EPOCH="$(date -u -d '-8 days' +%s 2>/dev/null || echo 0)"
+  SMOKE_LATEST="$(jq -c --argjson c "$WEEK_AGO_EPOCH" '
+    select(.agent == "smoke-test-pipeline" and .event == "COMPLETE")
+    | select(.ts | sub("\\..*Z$"; "Z") | fromdateiso8601 >= $c)
+  ' "$EVENTS" 2>/dev/null | tail -1)"
+  if [[ -z "$SMOKE_LATEST" ]]; then
+    echo "_No smoke runs in last 8 days. Next scheduled fire: Sunday 03:00 local time. Manual: \`bash ~/.claude/scripts/smoke-test-pipeline.sh --no-live\`._"
+  else
+    SMOKE_VERDICT="$(echo "$SMOKE_LATEST" | jq -r '.detail | capture("verdict=(?<v>[^|]+? )") | .v // ""' 2>/dev/null | head -c 120)"
+    SMOKE_TS="$(echo "$SMOKE_LATEST" | jq -r '.ts')"
+    SMOKE_PHASES="$(echo "$SMOKE_LATEST" | jq -r '.detail | capture("phases=(?<p>.+)$") | .p // ""' 2>/dev/null)"
+    echo "- **${SMOKE_VERDICT:-unknown}** at $SMOKE_TS"
+    if [[ -n "$SMOKE_PHASES" ]]; then
+      echo "$SMOKE_PHASES" | tr ',' '\n' | while IFS='=' read -r ph st; do
+        case "$st" in
+          pass)    icon="✅" ;;
+          warn)    icon="⚠ " ;;
+          fail)    icon="❌" ;;
+          skipped) icon="⏭ " ;;
+          *)       icon="•" ;;
+        esac
+        echo "  - $icon phase=$ph status=$st"
+      done
+    fi
+  fi
+  echo ""
+
+  # --- Closure-loop watcher (issue #185 / restored 2026-05-02) ---
+  # Aggregate the most recent COMPLETE event per fire (twice daily at
+  # 14:43 + 18:33 local time) and surface counts + any escalated BLOCKED events
+  # from the last 24h. rebase_queue_depth (issue #194) tracked as peak
+  # across the window — summing would double-count PRs DIRTY across runs.
+  #
+  # NOTE: PR #200 accidentally dropped this section while peeling local
+  # v6 patches off morning-digest.sh; the production digest continued to
+  # render it because cron used the un-patched live working tree. Restored
+  # here so the upstream master reflects what actually runs.
+  echo "## Closure-loop watcher (last 24h)"
+  echo ""
+  CW_EVENTS="$(jq -c 'select(.agent == "closure-watcher")' "$EVENTS" 2>/dev/null \
+    | tail -200 \
+    | jq -s '.')" || CW_EVENTS="[]"
+  CW_24H_CUTOFF="$(date -u -d '-1 day' +%s 2>/dev/null || echo 0)"
+  CW_RECENT="$(echo "$CW_EVENTS" | jq --argjson c "$CW_24H_CUTOFF" \
+    '[.[] | select((.ts | sub("\\..*Z$"; "Z") | fromdateiso8601) >= $c)]')"
+  CW_COUNT="$(echo "$CW_RECENT" | jq 'length')"
+  if [[ "$CW_COUNT" == "0" ]]; then
+    echo "_No closure-watcher events in the last 24h — either timer didn't fire or the agent never ran._"
+  else
+    CW_SUMS="$(echo "$CW_RECENT" | jq -r '
+      [.[] | select(.event == "COMPLETE") |
+        (.detail | sub("^counts="; "") | fromjson? // {})] |
+      reduce .[] as $r ({"auto_merged":0,"rebased":0,"queue_peak":0,"issues_closed":0,"orphans":0,"dupes":0,"runs":0};
+        .auto_merged += ($r.auto_merged // 0) |
+        .rebased     += ($r.rebased     // 0) |
+        .queue_peak  |= (if ($r.rebase_queue_depth // 0) > . then ($r.rebase_queue_depth // 0) else . end) |
+        .issues_closed += ($r.issues_closed // 0) |
+        .orphans     += ($r.orphans     // 0) |
+        .dupes       += ($r.dupes       // 0) |
+        .runs        += 1) |
+      "Runs: \(.runs) | Auto-merged: \(.auto_merged) | Rebase-flagged: \(.rebased) | Rebase queue peak: \(.queue_peak) | Orphan issues closed: \(.issues_closed) | Orphan branches: \(.orphans) | Duplicate issues: \(.dupes)"
+    ' 2>/dev/null || echo "")"
+    if [[ -n "$CW_SUMS" ]]; then
+      echo "- $CW_SUMS"
+    fi
+    CW_BLOCKED_OTHER="$(echo "$CW_RECENT" | jq -r '
+      .[] | select(.event == "BLOCKED")
+      | select((.detail // "") | test("orphan-branch") | not)
+      | "  - \(.detail)"' 2>/dev/null | head -10)"
+    CW_ORPHAN_BRANCHES="$(echo "$CW_RECENT" | jq -r '
+      [.[] | select(.event == "BLOCKED") | select((.detail // "") | test("orphan-branch"))] | length' 2>/dev/null)"
+    if [[ -n "$CW_BLOCKED_OTHER" ]]; then
+      echo ""
+      echo "Escalations:"
+      echo "$CW_BLOCKED_OTHER"
+    fi
+    if [[ "${CW_ORPHAN_BRANCHES:-0}" -gt 0 ]]; then
+      echo "  - orphan-branch BLOCKED events: $CW_ORPHAN_BRANCHES (see closure-watcher manifest in \$HIVE)"
+    fi
+  fi
+  echo ""
+
+  # --- Pipeline health (added 2026-05-01 to surface silent failures) ---
+  # pipeline-health-check.sh emits PROGRESS/BLOCKED events with check=<name>
+  # in the detail; we render the latest run's results so silent failures stop
+  # hiding behind a green systemd-timer state.
+  echo "## Pipeline health"
+  echo ""
+  HEALTH_EVENTS="$(jq -c --argjson c "$SINCE_EPOCH" '
+    select(.agent == "pipeline-health")
+    | select(.ts | sub("\\..*Z$"; "Z") | fromdateiso8601 >= $c)
+  ' "$EVENTS" 2>/dev/null | jq -s '.')"
+  HEALTH_COUNT="$(echo "$HEALTH_EVENTS" | jq 'length')"
+  if [[ "${HEALTH_COUNT:-0}" == "0" ]]; then
+    echo "_No pipeline-health-check events in window — script may not be scheduled yet (see scripts/pipeline-health-check.sh)._"
+  else
+    LATEST_SID="$(echo "$HEALTH_EVENTS" | jq -r 'sort_by(.ts) | last.sid')"
+    echo "$HEALTH_EVENTS" | jq -r --arg sid "$LATEST_SID" '
+      [.[] | select(.sid == $sid)] | sort_by(.ts) | .[]
+      | select(.detail | tostring | test("^check="))
+      | if .event == "BLOCKED" then "- ❌ \(.detail)"
+        else                         "- ✅ \(.detail)" end'
+    HEALTH_FAILED="$(echo "$HEALTH_EVENTS" | jq -r --arg sid "$LATEST_SID" '
+      [.[] | select(.sid == $sid) | select(.event == "BLOCKED")] | length')"
+    if [[ "${HEALTH_FAILED:-0}" -gt 0 ]]; then
+      echo ""
+      echo "**$HEALTH_FAILED pipeline-health checks failed in the latest run.** Investigate before trusting downstream metrics."
+    fi
   fi
   echo ""
 
@@ -564,71 +753,60 @@ fi
 
 emit_event "PROGRESS" "local markdown written: $DIGEST_MD"
 
-# --- Channel 2: Gmail draft via claude -p + Gmail MCP ---
-# Passes the full markdown via stdin (file paths and content) so the agent can
-# embed the detailed report in the draft body + add click-to-open links to the
-# local file copy. No attachment support in the Gmail MCP, so we embed instead.
-if command -v claude >/dev/null 2>&1; then
-  PR_SUMMARY_LINE="$(grep -c '^- ' "$DIGEST_MD" 2>/dev/null || echo 0)"
-  GMAIL_LOG="$CLAUDE_HOME/context/hive/logs/morning-digest-gmail.log"
-  claude -p "$(cat <<PROMPT
-SESSION_ID: ${SESSION_ID}-gmail
-You are COM-00 producing the nightly-puffin morning digest as a Gmail draft.
-
-INPUTS
-- Full report on disk: $DIGEST_MD
-- Partial event log on disk: $PARTIAL_MD
-- Target recipient: $DIGEST_EMAIL_TO
-
-STEPS
-1. (identity probe) Call mcp__claude_ai_Gmail__list_labels. Pick a fingerprint —
-   the NAME of the first user-created (non-system) label. Exclude labels whose
-   type is "system" and labels named CATEGORY_*, CHAT, SENT, INBOX, DRAFT,
-   SPAM, TRASH, IMPORTANT, STARRED, UNREAD. Remember this value for step 4.
-   Rationale: probe drift across runs is the earliest signal that the Gmail
-   MCP got re-authed against a different Google account.
-2. Read the full report from $DIGEST_MD.
-3. Compose the draft using the Gmail MCP tool mcp__claude_ai_Gmail__create_draft.
-   - to: ["$DIGEST_EMAIL_TO"]
-   - subject: derive from the report. Pattern:
-     "Nightly digest $TODAY — <N> opened, <M> merged, <K> promotions"
-     Extract the counts from the report sections; use 0 if a section says so.
-   - body (plain text): plain-text markdown of the FULL report from $DIGEST_MD,
-     with a header prepended that reads:
-       ── FULL REPORT also saved locally at:
-          $DIGEST_MD
-          Open: file://$DIGEST_MD
-          VS Code: vscode://file$DIGEST_MD
-     Then a blank line, then the complete report content.
-   - htmlBody: a richer version — same content but rendered with <h1>/<h2>/<ul>,
-     with the local-file links at the top as clickable anchors. Keep PR/issue
-     links as real anchors to their GitHub URLs.
-4. After creating the draft, print a single line to stdout:
-     "gmail_draft_id=<ID> subject=<SUBJECT> mcp_account_probe=<FINGERPRINT>"
-   If list_labels failed or returned no user labels, use mcp_account_probe=unknown.
-
-RULES
-- Never send — DRAFT only.
-- If mcp__claude_ai_Gmail__create_draft is unavailable, exit with the single
-  line: "gmail_draft_id=UNAVAILABLE subject=skipped mcp_account_probe=unavailable"
-- Do not truncate the report; embed the whole thing so the user can review
-  without leaving Gmail.
-PROMPT
-)" --permission-mode acceptEdits \
-     --add-dir "$CLAUDE_HOME/context/hive" \
-     > "$GMAIL_LOG" 2>&1 || GMAIL_EXIT=$?
-  GMAIL_EXIT="${GMAIL_EXIT:-0}"
-  # Grep for the sentinel line rather than tail -1: `claude -p` may emit trailing
-  # summary/debug lines after the script's final echo, causing tail -1 to miss
-  # the real status and emit "gmail draft: " with a meaningless tail. The
-  # sentinel is always prefixed "gmail_draft_id=".
+# --- Channel 2: Gmail draft via direct Gmail API (scripts/lib/gmail_draft.py) ---
+# Previously used `claude -p` + Gmail MCP, but MCP connectors are
+# interactive-session-scoped and unavailable in cron-spawned claude -p
+# subprocesses (confirmed 2026-04-24 failure). Now uses the Gmail REST API
+# via google-api-python-client with an OAuth refresh token cached at
+# ~/.config/morning-digest-gmail/token.json.
+#
+# One-time operator setup: bash ~/.claude/scripts/setup-gmail-draft-oauth.sh
+# If setup hasn't run yet, the python script exits non-zero with a clear
+# "no-valid-token" reason and this channel is skipped for the night — local
+# markdown + GitHub Discussion + example-repo memory still fire.
+GMAIL_LOG="$CLAUDE_HOME/context/hive/logs/morning-digest-gmail.log"
+GMAIL_PY="$CLAUDE_HOME/scripts/lib/gmail_draft.py"
+# Prefer the venv python created by setup-gmail-draft-oauth.sh (PEP 668 on
+# Ubuntu 24.04+ blocks `pip install --user`, so the google-auth libs live
+# in a dedicated venv at ~/.config/morning-digest-gmail/venv). Fall back
+# to system python3 only if the venv is missing — that path will fail
+# fast with the "missing-google-libs" sentinel, which is the correct
+# signal to run setup-gmail-draft-oauth.sh.
+GMAIL_VENV_PY="${GMAIL_DRAFT_CONFIG_DIR:-$HOME/.config/morning-digest-gmail}/venv/bin/python3"
+if [[ -x "$GMAIL_VENV_PY" ]]; then
+  GMAIL_PYTHON="$GMAIL_VENV_PY"
+else
+  GMAIL_PYTHON="$(command -v python3 2>/dev/null || echo '')"
+fi
+if [[ -n "$GMAIL_PYTHON" && -f "$GMAIL_PY" ]]; then
+  # Build subject from the digest headline counts — pattern preserved from
+  # the old claude -p prompt so downstream event consumers see a stable shape.
+  PRS_OPENED_CT="$(grep -cE '^## PRs opened \([0-9]' "$DIGEST_MD" 2>/dev/null)"; PRS_OPENED_CT="${PRS_OPENED_CT:-0}"
+  GMAIL_SUBJECT="Nightly digest $TODAY"
+  # Extract a tighter headline if we can parse the actual numbers (best-effort).
+  _N="$(grep -oE '^## PRs opened \(([0-9]+)\)' "$DIGEST_MD" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  _M="$(grep -oE '^## PRs merged to master \(([0-9]+)\)' "$DIGEST_MD" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  _K="$(grep -oE '^## Promotion PRs awaiting approval \(([0-9]+)\)' "$DIGEST_MD" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  if [[ -n "$_N" && -n "$_M" && -n "$_K" ]]; then
+    GMAIL_SUBJECT="Nightly digest $TODAY — ${_N} opened, ${_M} merged, ${_K} promotions"
+  fi
+  GMAIL_EXIT=0
+  "$GMAIL_PYTHON" "$GMAIL_PY" \
+    --to "$DIGEST_EMAIL_TO" \
+    --subject "$GMAIL_SUBJECT" \
+    --body-file "$DIGEST_MD" \
+    > "$GMAIL_LOG" 2>&1 || GMAIL_EXIT=$?
   GMAIL_STATUS_LINE="$(grep -E '^gmail_draft_id=' "$GMAIL_LOG" 2>/dev/null | tail -1 | head -c 200)"
   if (( GMAIL_EXIT == 0 )) && [[ -n "$GMAIL_STATUS_LINE" ]]; then
     emit_event "PROGRESS" "gmail draft: $GMAIL_STATUS_LINE"
   elif (( GMAIL_EXIT == 0 )); then
-    emit_event "PROGRESS" "gmail draft: dispatch exit=0 but no sentinel line in $GMAIL_LOG (probe tail -20 to debug)"
+    emit_event "PROGRESS" "gmail draft: python exit=0 but no sentinel line in $GMAIL_LOG (check tail for diagnostics)"
   else
-    emit_event "PROGRESS" "gmail draft: dispatch failed exit=$GMAIL_EXIT (see $GMAIL_LOG)"
+    # Non-zero exit is normal on first run before setup — the python script
+    # emits "gmail_draft_id=FAILED reason=<short>" as its single line so we
+    # propagate that into events.ndjson rather than a generic failure.
+    _fail_line="$(grep -E '^gmail_draft_id=FAILED' "$GMAIL_LOG" 2>/dev/null | tail -1 | head -c 200)"
+    emit_event "PROGRESS" "gmail draft: ${_fail_line:-python exit=$GMAIL_EXIT (see $GMAIL_LOG)}"
   fi
 fi
 

@@ -134,6 +134,34 @@ The sweeper is designed to run as an intermediate stage before the merge step:
 
 Add `blocked-human` to any PR you want to exempt from the sweep cycle.
 
+## Auto-Rebase Pre-Pass (issue #183)
+
+Before the main scan/merge loop, `--apply` mode (sweep, not triage) runs a
+pre-pass that finds every PR labeled `sweep-ready-to-merge` whose `mergeable`
+state has decayed to `CONFLICTING` (master moved on after labelling) and
+calls `hive_rebase_pr` on each via:
+
+```
+fetch origin → checkout origin/<head> → rebase origin/<base> → push --force-with-lease
+```
+
+- **Cap**: `SWEEP_REBASE_CAP=5` per run, lower than the merge cap (10) because
+  each rebase re-fires CI. Backlog drains gradually, not all-at-once.
+- **Conflict handling**: `git rebase --abort` and emit `BLOCKED:
+  rebase-conflict <repo>#<n>` — manual intervention required.
+- **Idempotent**: a second invocation with no upstream movement is a no-op
+  (rebase reports "Current branch is up to date" and the SHA-equality
+  short-circuit skips the push).
+- **Fork PRs**: refused (no push permission to the fork's head ref) — emits
+  BLOCKED with reason `fork-pr`.
+- **Cron-only context**: the local clone at `~/github/<org>/<name>` is
+  force-checked-out to the origin tip. Any uncommitted edits in that clone
+  are wiped; do not invoke this against a clone where a human is iterating.
+
+Counts surface in the summary line as `Auto-rebased: <N> (cap=<C>)` and in
+the COMPLETE event payload as `sweep_rebased=<N>
+sweep_rebase_failed=<N>`.
+
 ## Rate Limit Safety
 
 Uses `gh_api_safe` from `scripts/lib/common.sh` for all GitHub API calls.

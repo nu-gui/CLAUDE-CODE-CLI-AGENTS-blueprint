@@ -15,6 +15,17 @@
 
 set -euo pipefail
 
+# V6_EVENT_PATCHED — auto-inserted by example-repo-${USER}-local/scripts/wire-claude-cli-v6-events.sh
+# Source the v6 event helper. Defines v6_emit_event,
+# v6_pipeline_stage_started, v6_pipeline_stage_completed.
+# Helper is no-op when V6_API_TOKEN env is unset (see helper for details).
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh" ]]; then
+  # shellcheck source=lib/v6-event.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh"
+  v6_pipeline_stage_started "stage=nightly-dispatch cron_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  trap 'v6_pipeline_stage_completed "stage=nightly-dispatch exit=$?"' EXIT
+fi
+
 # Shared helpers (issue #35 / #47): cron PATH + canonical hive_emit_event.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 hive_cron_path
@@ -274,6 +285,12 @@ commit, PR. Event lifecycle is recorded externally.
 Tool/skill selection: consult handbook/07-decision-guide.md before acting. Do not ask
 the user which tool to use.
 
+Worktree boundary discipline (MANDATORY — issue #178):
+  - Your working directory is $local_path.
+  - Run `cd "$local_path"` as your FIRST shell command, before any git operation.
+  - After cd, verify with: source ~/.claude/scripts/lib/common.sh && hive_assert_worktree "$local_path"
+  - If hive_assert_worktree returns non-zero, STOP and emit a BLOCKED event — do not proceed with git work.
+
 Branch workflow (MANDATORY):
   - Work from $local_path
   - Branch from master: git checkout master && git pull && git checkout -b <type>/<slug>
@@ -386,27 +403,23 @@ PROMPT
     if grep -qiE 'unauthorized|credentials|token.*expired|auth.*required|not.*logged.*in' "$_stderr_tmp" 2>/dev/null; then
       emit_event "dispatch" "SPECIALIST_FAILED" "$name stage=$STAGE exit=$claude_exit attempts=$attempt (CREDENTIAL_EXPIRED)"
       escalate "CREDENTIAL_EXPIRED" "$name ($STAGE): claude -p exited $claude_exit — workspace credentials expired on ${USER}-workstation. Re-run \`claude auth login\`."
-      # Open a blocked-human GitHub issue (idempotent).
+      # Open a blocked-human GitHub issue (idempotent via hive_issue_create_deduped).
       local _cred_title="[AUTH] Claude workspace credentials expired on ${USER}-workstation — re-run \`claude auth login\`"
-      local _open_count
-      _open_count="$(gh issue list \
-        --repo ${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint \
-        --search 'in:title [AUTH] Claude workspace credentials expired' \
-        --state open \
-        --json number \
-        --jq length 2>/dev/null || echo 0)"
-      if [[ "$_open_count" -eq 0 ]]; then
-        gh issue create \
-          --repo ${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint \
-          --title "$_cred_title" \
-          --label "blocked-human,P0,infra" \
-          --body "Detected during \`nightly-dispatch.sh\` stage \`$STAGE\` repo \`$name\`.
+      local _cred_body="Detected during \`nightly-dispatch.sh\` stage \`$STAGE\` repo \`$name\`.
 
 \`claude -p\` exited $claude_exit with auth-failure output. The pipeline has stopped retrying and emitted a \`BLOCKED:CREDENTIAL_EXPIRED\` event.
 
 **Action required**: SSH into ${USER}-workstation and run \`claude auth login\`, then re-queue the affected stage.
 
-_Auto-opened by nightly-dispatch.sh (EXAMPLE-ID)_" 2>/dev/null || true
+_Auto-opened by nightly-dispatch.sh (EXAMPLE-ID)_"
+      local _dedup_result
+      _dedup_result="$(hive_issue_create_deduped \
+        "${GITHUB_ORG:-your-org}/CLAUDE-CODE-CLI-AGENTS-blueprint" \
+        "$_cred_title" \
+        "$_cred_body" \
+        "blocked-human,P0,infra")"
+      if [[ "$_dedup_result" == DUPLICATE_OF=* ]]; then
+        emit_event "dispatch" "PROGRESS" "escalation-deduped: $_dedup_result"
       fi
       return 0
     fi

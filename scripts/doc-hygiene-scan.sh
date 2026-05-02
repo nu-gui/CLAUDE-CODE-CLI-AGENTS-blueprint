@@ -20,6 +20,17 @@
 
 set -euo pipefail
 
+# V6_EVENT_PATCHED — auto-inserted by example-repo-${USER}-local/scripts/wire-claude-cli-v6-events.sh
+# Source the v6 event helper. Defines v6_emit_event,
+# v6_pipeline_stage_started, v6_pipeline_stage_completed.
+# Helper is no-op when V6_API_TOKEN env is unset (see helper for details).
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh" ]]; then
+  # shellcheck source=lib/v6-event.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh"
+  v6_pipeline_stage_started "stage=doc-hygiene-scan cron_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  trap 'v6_pipeline_stage_completed "stage=doc-hygiene-scan exit=$?"' EXIT
+fi
+
 # Shared helpers (issue #35 / #47).
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 hive_cron_path

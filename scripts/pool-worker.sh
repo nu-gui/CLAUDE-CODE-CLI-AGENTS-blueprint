@@ -13,8 +13,8 @@
 # directly when POOL_MODE=1. One queue line looks like:
 #
 #   {"v":1,"enqueued_at":"2026-04-19T12:00:00Z","agent":"infra-core",
-#    "project_key":"example-repo","priority":50,"sid":"b1-2026-04-19",
-#    "prompt":"…","add_dirs":["${HOME}/github/${GITHUB_ORG:-your-org}/example-repo"],
+#    "project_key":"example-repo-cdr-simple","priority":50,"sid":"b1-2026-04-19",
+#    "prompt":"…","add_dirs":["${HOME}/github/${GITHUB_ORG:-your-org}/example-repo-cdr-simple"],
 #    "append_system_prompt":"…","retry_count":0}
 #
 # This worker pops at most 1 item per invocation (intended to run every few
