@@ -190,17 +190,45 @@ PY
   # Override via DEPLOY_HEALTH_GRACE_SEC env var (default 30).
   local grace_sec="${DEPLOY_HEALTH_GRACE_SEC:-30}"
 
+  # Pre-deploy worktree probe (issue #180): record current branch + dirty status
+  # so we can correlate transient deploy failures with state left behind by B1/B2
+  # specialists. Both example-repo and example-repo C2 deploys have failed exit=1 with
+  # no actionable detail because the script previously swallowed all stderr.
+  local pre_branch pre_dirty
+  pre_branch="$(git -C "$local_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+  if [[ -n "$(git -C "$local_path" status --porcelain 2>/dev/null)" ]]; then
+    pre_dirty="dirty"
+  else
+    pre_dirty="clean"
+  fi
+  emit_event "PROGRESS" "$repo pre-deploy worktree branch=$pre_branch state=$pre_dirty"
+
+  # Capture all git + docker output to a per-deploy log file. The BLOCKED event
+  # below surfaces the log path + last lines so the morning digest can show
+  # actionable diagnostics inline instead of just "exit 1".
+  mkdir -p "$LOGS_DIR"
+  local deploy_log="$LOGS_DIR/deploy-${TODAY}-${repo}.log"
   local deploy_exit=0
+  {
+    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) deploy $repo ==="
+    echo "local_path=$local_path"
+    echo "deploy_cmd=$deploy_cmd"
+    echo "pre_branch=$pre_branch pre_dirty=$pre_dirty"
+    echo "---"
+  } >> "$deploy_log" 2>&1
   (
     cd "$local_path"
+    set -x
     git fetch --quiet origin
     git checkout master
     git pull --ff-only origin master
     eval "$deploy_cmd"
-  ) || deploy_exit=$?
+  ) >> "$deploy_log" 2>&1 || deploy_exit=$?
 
   if [[ "$deploy_exit" -ne 0 ]]; then
-    emit_event "BLOCKED" "$repo deploy FAILED (exit $deploy_exit)"
+    local log_tail
+    log_tail="$(tail -5 "$deploy_log" 2>/dev/null | tr '\n' '|' | sed 's/|/ \\| /g')"
+    emit_event "BLOCKED" "$repo deploy FAILED (exit $deploy_exit) branch=$pre_branch state=$pre_dirty log=$deploy_log tail: $log_tail"
     return 1
   fi
 

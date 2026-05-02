@@ -28,7 +28,7 @@ works without yaml edits.
 
 ## Cadence
 
-All times local time (your local timezone). Source of truth: `config/nightly-schedule.yaml`.
+All times local time (local time). Source of truth: `config/nightly-schedule.yaml`.
 
 | Time (local time) | Cron | Stage | Script | Purpose |
 |---|---|---|---|---|

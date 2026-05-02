@@ -37,44 +37,58 @@ set -eo pipefail
 # Patterns that MUST NOT appear in tracked files on the upstream blueprint.
 # Forks customise this list; upstream keeps it exhaustive.
 #
-# Each entry is an extended-regex fed to `grep -E`. Lines starting with `#`
-# are grouping comments for readability.
-LEAK_PATTERNS=(
+# Patterns are stored base64-encoded so the specifics (upstream maintainer's
+# personal identifiers, production IP ranges, etc.) don't appear in plain
+# text inside this committed file — the goal is that GitHub's code search
+# won't surface hits on this script when someone greps for the identifiers
+# themselves. The script decodes them at runtime before grepping.
+#
+# Each entry is the base64 of an extended-regex pattern fed to `grep -P`.
+# Grouping comments below identify only the CATEGORY of each pattern, not
+# the literal content.
+LEAK_PATTERNS_B64=(
   # ─── Personal identity (upstream maintainer) ───────────────────────────
-  'wesleyburgess'
-  '\bwesley\b'
-  '\bwes@'
-  'zyongate'
+  "d2VzbGV5YnVyZ2Vzcw=="
+  "XGJ3ZXNsZXlcYg=="
+  "XGJ3ZXNA"
+  "enlvbmdhdGU="
 
   # ─── Hostnames / machines ──────────────────────────────────────────────
-  'burg-optiplex'
-  '\b-optiplex\b'
+  "YnVyZy1vcHRpcGxleA=="
+  "XGItb3B0aXBsZXhcYg=="
 
   # ─── Prod IP octets (upstream's VPS fleet — seen nowhere else) ────────
   # Final octet is 1–3 digits so we catch the full 0–255 range, not just
-  # single-digit hosts. Trailing \b prevents spurious matches on
-  # 102.223.1234 or 102.223.19.extra.
-  '\b102\.223\.[0-9]{1,3}\b'
-  '\b102\.211\.[0-9]{1,3}\b'
-  '\b102\.207\.[0-9]{1,3}\b'
-  '\b102\.209\.[0-9]{1,3}\b'
-  '\b192\.168\.10\.[0-9]{1,3}\b'
+  # single-digit hosts. Trailing \b prevents spurious matches on extra
+  # digits or trailing non-word chars.
+  "XGIxMDJcLjIyM1wuWzAtOV17MSwzfVxi"
+  "XGIxMDJcLjIxMVwuWzAtOV17MSwzfVxi"
+  "XGIxMDJcLjIwN1wuWzAtOV17MSwzfVxi"
+  "XGIxMDJcLjIwOVwuWzAtOV17MSwzfVxi"
+  "XGIxOTJcLjE2OFwuMTBcLlswLTldezEsM31cYg=="
 
   # ─── Upstream-owned repo names ─────────────────────────────────────────
-  '\bWSNextGenCCS-AI\b'
-  '\bwsnextgenccs\b'
-  '\bnu-trade_'
-  '\bccs-cdr-[a-z]'
-  '\bCCS-SIP-Server-source-code\b'
-  '\bCCS-Whisper-Transcription-Languages\b'
+  "XGJXU05leHRHZW5DQ1MtQUlcYg=="
+  "XGJ3c25leHRnZW5jY3NcYg=="
+  "XGJudS10cmFkZV8="
+  "XGJjY3MtY2RyLVthLXpd"
+  "XGJDQ1MtU0lQLVNlcnZlci1zb3VyY2UtY29kZVxi"
+  "XGJDQ1MtV2hpc3Blci1UcmFuc2NyaXB0aW9uLUxhbmd1YWdlc1xi"
 
   # ─── Org label (upstream maintainer's legal entity) ────────────────────
-  'NU GUI \(Pty\) Ltd'
+  "TlUgR1VJIFwoUHR5XCkgTHRk"
 
   # ─── Sprint / project identifiers (upstream project management) ───────
-  '\bPUFFIN-W[0-9]+-ID[0-9]'
-  '\bW1[0-9]-ID[0-9]'
+  "XGJQVUZGSU4tV1swLTldKy1JRFswLTld"
+  "XGJXMVswLTldLUlEWzAtOV0="
 )
+
+# Decode once at startup into a plain array that the main loop uses.
+LEAK_PATTERNS=()
+for _encoded in "${LEAK_PATTERNS_B64[@]}"; do
+  LEAK_PATTERNS+=("$(printf '%s' "$_encoded" | base64 -d)")
+done
+unset _encoded
 
 # Dirs and files exempt from the scan. The script itself contains the
 # patterns by definition, so it must not match itself. `.git/` contains

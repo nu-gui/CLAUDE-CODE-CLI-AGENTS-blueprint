@@ -17,6 +17,17 @@
 
 set -euo pipefail
 
+# V6_EVENT_PATCHED — auto-inserted by example-repo-${USER}-local/scripts/wire-claude-cli-v6-events.sh
+# Source the v6 event helper. Defines v6_emit_event,
+# v6_pipeline_stage_started, v6_pipeline_stage_completed.
+# Helper is no-op when V6_API_TOKEN env is unset (see helper for details).
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh" ]]; then
+  # shellcheck source=lib/v6-event.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh"
+  v6_pipeline_stage_started "stage=nightly-select-projects cron_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  trap 'v6_pipeline_stage_completed "stage=nightly-select-projects exit=$?"' EXIT
+fi
+
 # Shared helpers (issue #35 / #47): cron PATH + canonical hive_emit_event.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 hive_cron_path
@@ -293,18 +304,33 @@ printf '%s' "$REPOS_FILTERED"    > "$_scored_tmpdir/repos.json"
 printf '%s' "$ISSUES_JSON"       > "$_scored_tmpdir/issues.json"
 printf '%s' "$PRS_JSON"          > "$_scored_tmpdir/prs.json"
 printf '%s' "$PR_IN_FLIGHT_REFS" > "$_scored_tmpdir/pr_refs.json"
+# Per-repo `score_boost` from nightly-repo-profiles.yaml (operator-set
+# priority; added to the final scored value below). Default 0 when unset.
+PROFILES_PATH="${PROFILES:-$HOME/.claude/config/nightly-repo-profiles.yaml}"
+PROFILES="$PROFILES_PATH" python3 -c '
+import json, os, yaml
+p = yaml.safe_load(open(os.environ["PROFILES"])) or {}
+out = {}
+for name, cfg in (p.get("repos") or {}).items():
+    boost = (cfg or {}).get("score_boost")
+    if isinstance(boost, (int, float)) and boost != 0:
+        out[name] = boost
+print(json.dumps(out))
+' > "$_scored_tmpdir/score_boosts.json" 2>/dev/null || echo '{}' > "$_scored_tmpdir/score_boosts.json"
 SCORED="$(jq -n \
-  --slurpfile repos_arr   "$_scored_tmpdir/repos.json" \
-  --slurpfile issues_arr  "$_scored_tmpdir/issues.json" \
-  --slurpfile prs_arr     "$_scored_tmpdir/prs.json" \
-  --slurpfile pr_refs_arr "$_scored_tmpdir/pr_refs.json" \
+  --slurpfile repos_arr        "$_scored_tmpdir/repos.json" \
+  --slurpfile issues_arr       "$_scored_tmpdir/issues.json" \
+  --slurpfile prs_arr          "$_scored_tmpdir/prs.json" \
+  --slurpfile pr_refs_arr      "$_scored_tmpdir/pr_refs.json" \
+  --slurpfile score_boosts_arr "$_scored_tmpdir/score_boosts.json" \
   --arg now "$NOW_ISO" \
   --arg agent_re "$AGENT_PREFIX_RE" '
   # slurpfile wraps the top-level value in an array; unwrap for single-doc JSON.
-  ($repos_arr[0])   as $repos   |
-  ($issues_arr[0])  as $issues  |
-  ($prs_arr[0])     as $prs     |
-  ($pr_refs_arr[0]) as $pr_refs |
+  ($repos_arr[0])        as $repos        |
+  ($issues_arr[0])       as $issues       |
+  ($prs_arr[0])          as $prs          |
+  ($pr_refs_arr[0])      as $pr_refs      |
+  ($score_boosts_arr[0]) as $score_boosts |
   def count_label($lbls; $name):
     [$lbls[]? | select(.name == $name)] | length;
   def days_since($ts):
@@ -352,6 +378,7 @@ SCORED="$(jq -n \
       + ($sprint_blessed * 50)            # hard signal: PLAN-00 chose this for the sprint
       + ($ready_prs * 15)
       + (if $dsc <= 30 then 10 else 0 end)
+      + ($score_boosts[$r.name] // 0)     # operator-set per-repo priority from yaml
       - ([$total_issues, 30] | min) * 0.5
       - (if $pr_pileup then 15 else 0 end)
       ) as $score

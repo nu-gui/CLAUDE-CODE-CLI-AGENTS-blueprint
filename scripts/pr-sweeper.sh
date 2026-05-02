@@ -3,6 +3,11 @@
 #
 # Org-wide PR sweeper — read-only inventory + label (EXAMPLE-ID / issue #113).
 # Extended with --triage mode (EXAMPLE-ID / issue #131).
+# Extended with auto-rebase pre-pass for dirty sweep-ready PRs (issue #183):
+# in --apply (sweep) mode the script first walks all sweep-ready-to-merge PRs
+# whose mergeable state has decayed to CONFLICTING and calls hive_rebase_pr on
+# each (cap SWEEP_REBASE_CAP=5) before the main scan/merge loop. This stops
+# previously-blessed PRs from rotting in the queue when master moves on.
 #
 # Enumerates every open PR across ${GITHUB_ORG:-your-org} + ${GITHUB_ORG:-your-org}, applies the SWEEP_READY
 # heuristic, and (in --apply mode) labels qualifying PRs and posts a one-time
@@ -52,6 +57,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 hive_cron_path
+
+# ---------------------------------------------------------------------------
+# Single-instance guard — refuse to start if another pr-sweeper is running.
+# Mirrors the closure-watcher flock pattern (issue #196): the second instance
+# exits 0 so the systemd timer does not enter a failed state, and emits a
+# BLOCKED event for digest visibility.
+LOCK_FILE="${PR_SWEEPER_LOCK:-/tmp/pr-sweeper.lock}"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  hive_emit_event "pr-sweeper" "BLOCKED" "another pr-sweeper instance running; aborting (lock=$LOCK_FILE)"
+  echo "[pr-sweeper] another instance is running — exit 0 (timer should not be marked failed)"
+  exit 0
+fi
+# Lock will be released on FD 9 close at exit
+# ---------------------------------------------------------------------------
 
 HIVE_DEFAULT_AGENT="pr-sweeper"
 SESSION_ID="${SESSION_ID:-${SID:-standalone-sweep}}"
@@ -114,6 +134,14 @@ LINKED_ISSUE_RE='(?i)(closes|fixes|resolves)\s+#[0-9]+'
 SWEEPER_COMMENT_MARKER="sweeper: SWEEP_READY_TO_MERGE"
 TRIAGE_COMMENT_MARKER="sweeper triage:"
 
+# Auto-merge cap: max PRs merged per --apply run (avoids CI burst on backlog purge).
+SWEEP_MERGE_CAP=10
+
+# Auto-rebase cap: max sweep-ready PRs rebased per --apply run (issue #183).
+# Lower than the merge cap because each rebase re-fires CI on the PR — we
+# want to bleed the conflict backlog gradually rather than in one burst.
+SWEEP_REBASE_CAP=5
+
 # Triage label names
 LABEL_TRIAGE_CLOSE_STALE="sweeper:CLOSE_STALE"
 LABEL_TRIAGE_CLOSE_DRAFT="sweeper:CLOSE_DRAFT"
@@ -137,6 +165,9 @@ NEEDS_ATTENTION_COUNT=0
 SKIP_COUNT=0
 MISSING_LINK_COUNT=0
 PARTIAL_FAIL=0
+SWEEP_MERGED_COUNT=0
+SWEEP_REBASED_COUNT=0
+SWEEP_REBASE_FAILED_COUNT=0
 
 # Triage bucket counters
 TRIAGE_CLOSE_STALE_COUNT=0
@@ -400,6 +431,101 @@ triage_comment_text() {
   printf '%s|||%s' "$rationale" "$next_action"
 }
 
+# ---------------------------------------------------------------------------
+# attempt_sweep_merge: try to squash-merge a sweep-ready PR.
+#
+# Only called in --apply mode, after the sweep-ready label has been applied.
+# All conditions checked here again defensively (state may have changed between
+# the scan pass and now, and we want the logic self-contained for auditability).
+#
+# Conditions (ALL must hold):
+#   1. Label sweep-ready-to-merge is present (guaranteed by caller, checked anyway)
+#   2. mergeable == MERGEABLE
+#   3. mergeStateStatus == CLEAN
+#   4. all statusCheckRollup entries SUCCESS or SKIPPED (no FAILURE, CANCELLED,
+#      TIMED_OUT, STARTUP_FAILURE)
+#   5. base branch == master (never main — explicit guard)
+#   6. not labeled do-not-auto or needs-revision
+#
+# Returns 0 on merge-attempted (even if gh itself fails — we count it),
+# returns 1 when conditions not met (counted as skipped, not an error).
+# ---------------------------------------------------------------------------
+attempt_sweep_merge() {
+  local repo="$1" pr_number="$2"
+
+  # Cap guard (global counter checked by caller too, but double-check here).
+  if [[ "$SWEEP_MERGED_COUNT" -ge "$SWEEP_MERGE_CAP" ]]; then
+    return 1
+  fi
+
+  # Re-fetch current state for a clean snapshot.
+  local pr_state_json
+  pr_state_json="$(gh pr view "$pr_number" --repo "$repo" \
+    --json number,labels,mergeable,mergeStateStatus,statusCheckRollup,baseRefName \
+    2>/dev/null)" || {
+    echo "[pr-sweeper] WARN: could not re-fetch $repo#$pr_number for merge check" >&2
+    return 1
+  }
+
+  local base_branch mergeable merge_state_status labels_now
+  base_branch="$(printf '%s' "$pr_state_json" | jq -r '.baseRefName')"
+  mergeable="$(printf '%s' "$pr_state_json" | jq -r '.mergeable')"
+  merge_state_status="$(printf '%s' "$pr_state_json" | jq -r '.mergeStateStatus')"
+  labels_now="$(printf '%s' "$pr_state_json" | jq -r '[.labels[].name] | join(",")')"
+
+  # Guard: base must be master, never main.
+  if [[ "$base_branch" != "master" ]]; then
+    echo "[pr-sweeper] $repo#$pr_number base=$base_branch (not master) — skip sweep-merge"
+    return 1
+  fi
+
+  # Guard: must still be MERGEABLE + CLEAN.
+  if [[ "$mergeable" != "MERGEABLE" || "$merge_state_status" != "CLEAN" ]]; then
+    echo "[pr-sweeper] $repo#$pr_number mergeable=$mergeable mergeStateStatus=$merge_state_status — skip sweep-merge"
+    return 1
+  fi
+
+  # Guard: no blocking labels.
+  if printf '%s' "$labels_now" | grep -qiE 'do-not-auto|needs-revision'; then
+    local block_label
+    block_label="$(printf '%s' "$labels_now" | grep -oiE 'do-not-auto|needs-revision' | head -1)"
+    echo "[pr-sweeper] $repo#$pr_number has blocking label '$block_label' — skip sweep-merge"
+    return 1
+  fi
+
+  # Guard: sweep-ready-to-merge label must be present (sanity check).
+  if ! printf '%s' "$labels_now" | grep -qF "$LABEL_SWEEP_READY"; then
+    echo "[pr-sweeper] $repo#$pr_number missing $LABEL_SWEEP_READY label — skip sweep-merge"
+    return 1
+  fi
+
+  # Guard: all CI checks must be SUCCESS or SKIPPED.
+  local rollup_now
+  rollup_now="$(printf '%s' "$pr_state_json" | jq '.statusCheckRollup // []')"
+  local ci_bad
+  ci_bad="$(printf '%s' "$rollup_now" | jq '[.[] | .conclusion // ""] |
+    any(. == "FAILURE" or . == "CANCELLED" or . == "TIMED_OUT" or . == "STARTUP_FAILURE")' \
+    2>/dev/null || echo "true")"
+  if [[ "$ci_bad" == "true" ]]; then
+    echo "[pr-sweeper] $repo#$pr_number has failing/cancelled CI checks — skip sweep-merge"
+    return 1
+  fi
+
+  # All conditions met — attempt the merge.
+  echo "[pr-sweeper] sweep-merging $repo#$pr_number (squash, delete-branch)"
+  local rc=0
+  gh pr merge "$pr_number" --repo "$repo" --squash --delete-branch --auto 2>/dev/null || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    SWEEP_MERGED_COUNT=$(( SWEEP_MERGED_COUNT + 1 ))
+    emit "PROGRESS" "sweep-merged $repo#$pr_number (squash)"
+    echo "[pr-sweeper] sweep-merged $repo#$pr_number"
+  else
+    emit "PROGRESS" "sweep-merge-failed $repo#$pr_number exit=$rc"
+    echo "[pr-sweeper] WARN: sweep-merge-failed $repo#$pr_number exit=$rc — continuing" >&2
+  fi
+  return 0
+}
+
 # Close a PR with a descriptive comment. Only called for CLOSE_STALE + CLOSE_DRAFT.
 close_pr_with_comment() {
   local repo="$1" pr_number="$2" triage_label="$3"
@@ -430,6 +556,68 @@ close_pr_with_comment() {
   gh pr close "$pr_number" --repo "$repo" 2>/dev/null || true
   TRIAGE_CLOSED_COUNT=$(( TRIAGE_CLOSED_COUNT + 1 ))
   echo "[pr-sweeper] Closed $repo#$pr_number (${triage_label})"
+}
+
+# ---------------------------------------------------------------------------
+# rebase_dirty_sweep_ready_prs — pre-pass for --apply sweep mode (issue #183)
+#
+# Sweep-ready-to-merge PRs that fall behind master after labelling sit in
+# CONFLICTING / DIRTY indefinitely; the sweep-merge guard refuses them and
+# the queue silently grows. This pre-pass walks each org's repos, finds
+# sweep-ready PRs that are now CONFLICTING, and calls hive_rebase_pr on each
+# (capped at SWEEP_REBASE_CAP to avoid a CI burst on backlog purge).
+#
+# Idempotent: hive_rebase_pr short-circuits when the head branch is already
+# on top of base, so re-running on a clean queue is a near-free no-op.
+# Triage mode is unaffected — this pre-pass only runs in sweep+apply.
+# ---------------------------------------------------------------------------
+rebase_dirty_sweep_ready_prs() {
+  [[ "$APPLY" -eq 0 ]] && return 0
+  [[ "$TRIAGE" -eq 1 ]] && return 0
+
+  echo "[pr-sweeper] Pre-pass: rebase dirty sweep-ready PRs (cap=$SWEEP_REBASE_CAP)"
+  emit "PROGRESS" "rebase-pre-pass-start cap=$SWEEP_REBASE_CAP"
+
+  local org repos_json repo_name repo prs_json pr_n mergeable
+  IFS=',' read -ra _rebase_org_list <<< "$ORGS"
+  for org in "${_rebase_org_list[@]}"; do
+    repos_json="$(gh_api_safe repo list "$org" \
+      --limit 100 --no-archived \
+      --json name,isArchived \
+      --jq '[.[] | select(.isArchived == false)]' 2>/dev/null)" || {
+      echo "[pr-sweeper] WARN: rebase pre-pass could not list repos for $org" >&2
+      continue
+    }
+
+    while IFS= read -r repo_name; do
+      [[ -z "$repo_name" ]] && continue
+      repo="$org/$repo_name"
+
+      prs_json="$(gh_api_safe pr list --repo "$repo" --state open \
+        --label "$LABEL_SWEEP_READY" \
+        --json number,mergeable 2>/dev/null)" || continue
+
+      while IFS=$'\t' read -r pr_n mergeable; do
+        [[ -z "$pr_n" ]] && continue
+        [[ "$mergeable" != "CONFLICTING" ]] && continue
+
+        if [[ "$SWEEP_REBASED_COUNT" -ge "$SWEEP_REBASE_CAP" ]]; then
+          emit "BLOCKED" "sweep-rebase-cap-reached ($SWEEP_REBASE_CAP) — $repo#$pr_n not rebased"
+          echo "[pr-sweeper] sweep-rebase cap ($SWEEP_REBASE_CAP) reached — stopping pre-pass"
+          return 0
+        fi
+
+        echo "[pr-sweeper] rebasing $repo#$pr_n (sweep-ready + CONFLICTING)"
+        if hive_rebase_pr "$repo" "$pr_n"; then
+          SWEEP_REBASED_COUNT=$(( SWEEP_REBASED_COUNT + 1 ))
+        else
+          SWEEP_REBASE_FAILED_COUNT=$(( SWEEP_REBASE_FAILED_COUNT + 1 ))
+        fi
+      done < <(printf '%s' "$prs_json" | jq -r '.[] | [.number, .mergeable] | @tsv')
+    done < <(printf '%s' "$repos_json" | jq -r '.[].name')
+  done
+
+  echo "[pr-sweeper] Pre-pass done: rebased=$SWEEP_REBASED_COUNT failed=$SWEEP_REBASE_FAILED_COUNT"
 }
 
 # ---------------------------------------------------------------------------
@@ -580,8 +768,29 @@ scan_repo() {
         apply_label "$repo" "$number" "$LABEL_NEEDS_LINK"
       fi
       post_sweeper_comment "$repo" "$number" "$verdict" "$base_branch" "$linked_issue"
+
+      # Attempt auto-merge: MERGEABLE + CLEAN + all checks SUCCESS/SKIPPED +
+      # base=master + no do-not-auto/needs-revision labels.
+      # Cap: SWEEP_MERGE_CAP per run; emit BLOCKED if hit.
+      if [[ "$SWEEP_MERGED_COUNT" -ge "$SWEEP_MERGE_CAP" ]]; then
+        emit "BLOCKED" "sweep-merge-cap-reached ($SWEEP_MERGE_CAP) — $repo#$number not merged"
+        echo "[pr-sweeper] sweep-merge cap ($SWEEP_MERGE_CAP) reached — skipping $repo#$number"
+      else
+        # `attempt_sweep_merge` returns 1 from many guard paths (missing label,
+        # bad CI, base != master, etc.) — those are NOT errors, they're "skip"
+        # outcomes. Under `set -euo pipefail` (top of script), a non-zero
+        # return here propagates and aborts the entire sweep — observed
+        # 2026-04-28 08:10 local time when blueprint#3's missing-label skip killed
+        # the run before ${GITHUB_ORG:-your-org} was even scanned. Swallow with `|| true`.
+        attempt_sweep_merge "$repo" "$number" || true
+      fi
     else
       echo "[dry-run] $repo#$number → $verdict (would apply: $LABEL_SWEEP_READY$([ "$has_link" -eq 0 ] && echo ", $LABEL_NEEDS_LINK" || echo ""))"
+      # Dry-run: show what merge would happen (re-check merge state status here too).
+      local dry_merge_state_status
+      dry_merge_state_status="$(gh pr view "$number" --repo "$repo" \
+        --json mergeStateStatus -q '.mergeStateStatus' 2>/dev/null || echo "UNKNOWN")"
+      echo "[dry-run] $repo#$number → would sweep-merge (squash) if mergeStateStatus=$dry_merge_state_status == CLEAN"
     fi
 
   done < <(printf '%s' "$prs_json" | jq -c '.[]')
@@ -757,6 +966,11 @@ emit "SPAWN" "mode=$([ "$TRIAGE" -eq 1 ] && echo triage || echo sweep)/$([ "$APP
 
 START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Issue #183: rebase any sweep-ready PRs that have drifted into CONFLICTING
+# state before running the main sweep — gives the loop a chance to actually
+# merge what we previously labelled as ready.
+rebase_dirty_sweep_ready_prs
+
 IFS=',' read -ra ORG_LIST <<< "$ORGS"
 for org in "${ORG_LIST[@]}"; do
   echo "[pr-sweeper] Scanning org: $org (mode=$([ "$TRIAGE" -eq 1 ] && echo triage || echo sweep))"
@@ -842,6 +1056,10 @@ mkdir -p "$(dirname "$OUTPUT")"
     printf '| NEEDS_ATTENTION | %s |\n' "$NEEDS_ATTENTION_COUNT"
     printf '| SKIP (bot/draft) | %s |\n' "$SKIP_COUNT"
     printf '| Missing issue link | %s |\n' "$MISSING_LINK_COUNT"
+    [[ "$APPLY" -eq 1 ]] && printf '| Auto-merged (sweep) | %s |\n' "$SWEEP_MERGED_COUNT"
+    [[ "$APPLY" -eq 1 ]] && printf '| Auto-rebased (dirty sweep-ready) | %s |\n' "$SWEEP_REBASED_COUNT"
+    [[ "$APPLY" -eq 1 && "$SWEEP_REBASE_FAILED_COUNT" -gt 0 ]] && \
+      printf '| Rebase failed (conflict/missing) | %s |\n' "$SWEEP_REBASE_FAILED_COUNT"
     [[ "$PARTIAL_FAIL" -gt 0 ]] && printf '| Repos with API errors | %s |\n' "$PARTIAL_FAIL"
     printf '\n## Heuristic Applied\n\n'
     printf '%s\n' "- mergeable == MERGEABLE"
@@ -875,13 +1093,19 @@ else
   echo "  NEEDS_ATTENTION  : $NEEDS_ATTENTION_COUNT"
   echo "  SKIP (bot/draft) : $SKIP_COUNT"
   echo "  Missing link     : $MISSING_LINK_COUNT"
+  if [[ "$APPLY" -eq 1 ]]; then
+    echo "  Auto-merged      : $SWEEP_MERGED_COUNT"
+    echo "  Auto-rebased     : $SWEEP_REBASED_COUNT (cap=$SWEEP_REBASE_CAP)"
+    [[ "$SWEEP_REBASE_FAILED_COUNT" -gt 0 ]] && \
+      echo "  Rebase failed    : $SWEEP_REBASE_FAILED_COUNT"
+  fi
 fi
 [[ "$PARTIAL_FAIL" -gt 0 ]] && echo "  API errors (repos): $PARTIAL_FAIL"
 
 if [[ "$TRIAGE" -eq 1 ]]; then
   emit "COMPLETE" "mode=triage total_prs=$TOTAL_PRS close_stale=$TRIAGE_CLOSE_STALE_COUNT close_draft=$TRIAGE_CLOSE_DRAFT_COUNT needs_rebase=$TRIAGE_NEEDS_REBASE_COUNT needs_ci_fix=$TRIAGE_NEEDS_CI_FIX_COUNT needs_review_fix=$TRIAGE_NEEDS_REVIEW_FIX_COUNT hold_human=$TRIAGE_HOLD_HUMAN_COUNT closed=$TRIAGE_CLOSED_COUNT partial_fail=$PARTIAL_FAIL"
 else
-  emit "COMPLETE" "mode=sweep total_prs=$TOTAL_PRS sweep_ready=$SWEEP_READY_COUNT skip=$SKIP_COUNT partial_fail=$PARTIAL_FAIL"
+  emit "COMPLETE" "mode=sweep total_prs=$TOTAL_PRS sweep_ready=$SWEEP_READY_COUNT sweep_merged=$SWEEP_MERGED_COUNT sweep_rebased=$SWEEP_REBASED_COUNT sweep_rebase_failed=$SWEEP_REBASE_FAILED_COUNT skip=$SKIP_COUNT partial_fail=$PARTIAL_FAIL"
 fi
 
 [[ "$PARTIAL_FAIL" -gt 0 ]] && exit 2 || exit 0

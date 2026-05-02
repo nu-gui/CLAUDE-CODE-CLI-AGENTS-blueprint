@@ -21,6 +21,17 @@
 
 set -euo pipefail
 
+# V6_EVENT_PATCHED — auto-inserted by example-repo-${USER}-local/scripts/wire-claude-cli-v6-events.sh
+# Source the v6 event helper. Defines v6_emit_event,
+# v6_pipeline_stage_started, v6_pipeline_stage_completed.
+# Helper is no-op when V6_API_TOKEN env is unset (see helper for details).
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh" ]]; then
+  # shellcheck source=lib/v6-event.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/v6-event.sh"
+  v6_pipeline_stage_started "stage=product-discovery cron_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  trap 'v6_pipeline_stage_completed "stage=product-discovery exit=$?"' EXIT
+fi
+
 # Shared helpers (issue #35 / #47).
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 hive_cron_path
@@ -288,13 +299,22 @@ Key constraints:
   - Emit PROGRESS per issue created; COMPLETE at end with created=N skipped=M proposals=K.
   - If background activity detected on this repo despite the wrapper's check (race),
     emit BLOCKED: background-active and exit.
+  - Issue dedup (Layer-1 guardrail, issue #184): NEVER call \`gh issue create\` directly.
+    Instead use the shared wrapper for every issue you would create:
+      bash ~/.claude/scripts/hive-issue-create.sh <repo> "<title>" "<body>" "<labels>"
+    The wrapper fuzzy-matches the title against open issues with the same labels.
+    If stdout starts with "DUPLICATE_OF=#N", skip — emit PROGRESS "dedup-skipped: ..."
+    and count it in the final skipped=M total. If stdout is a URL, the issue was
+    created normally — proceed as below.
   - Milestone: if "Sprint milestone" above is non-empty, pass --milestone "<value>"
     to every gh issue create call. If the milestone flag fails (repo has no such
     milestone), retry the create without the flag rather than dropping the issue.
-  - Projects v2: after each successful gh issue create, source scripts/lib/common.sh
-    and call hive_add_to_project "<issue-url>" with the URL returned by gh issue create
-    (e.g. https://github.com/${GITHUB_ORG:-your-org}/REPO/issues/N). The helper is idempotent and
-    gracefully skips if the token lacks "project" scope — do not treat that as failure.
+    Note: hive-issue-create.sh does not accept a milestone flag — pass it via a
+    follow-up \`gh issue edit <url> --milestone "<value>"\` if needed.
+  - Projects v2: after each successful issue creation (URL returned by the wrapper),
+    source scripts/lib/common.sh and call hive_add_to_project "<issue-url>".
+    The helper is idempotent and gracefully skips if the token lacks "project" scope
+    — do not treat that as failure.
 PROMPT
 )"
 

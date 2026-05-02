@@ -67,7 +67,7 @@ You are CTX-00, the Context Manager. You maintain persistent memory, knowledge c
 │   └── decisions/            # Org-wide decisions (DEC-XXX)
 ├── projects/                  # Project-specific context
 │   ├── example-repo/           # example-repo project context
-│   └── example-repo/       # example-repo project context
+│   └── example-repo-cdr-simple/       # example-repo-cdr-simple project context
 ├── sessions/                  # Active processing sessions
 ├── escalations/               # Escalation records (ESC-XXX)
 ├── handoffs/                  # Handoff records (HOFF-XXX)

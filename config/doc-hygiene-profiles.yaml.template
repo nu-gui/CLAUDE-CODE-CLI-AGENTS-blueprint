@@ -16,7 +16,7 @@ active_days: [1, 2, 3, 4, 5]
 # Per-repo rules. Override any global defaults.
 repos:
   example-repo:
-    local_path: ${HOME}/github/your-org/example-repo
+    local_path: ${HOME}/github/example-org/example-repo
     rules:
       - require_readme_top_level: true
       - require_changelog: false
