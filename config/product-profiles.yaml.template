@@ -15,7 +15,7 @@ max_issues_per_run: 5
 # Per-repo configuration.
 repos:
   example-repo:
-    local_path: ${HOME}/github/your-org/example-repo
+    local_path: ${HOME}/github/example-org/example-repo
     # Required: PROD-00 will not create issues for repos without ROADMAP.md.
     # If missing, it scaffolds ROADMAP-proposals.md and emits BLOCKED.
     require_roadmap: true

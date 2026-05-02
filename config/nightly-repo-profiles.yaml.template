@@ -13,23 +13,17 @@
 # entries below to match your own repos. Delete the `example-repo` entries
 # once you've replaced them.
 
-# Top-level convention root. When a repo entry has no explicit `local_path`,
-# the resolver falls back to `${github_root}/${GITHUB_ORG}/{repo-name}` →
-# `${github_root}/{secondary-org}/{repo-name}` → `${HOME}/{repo-name}`.
-# Override per-repo with `local_path:` when a repo lives outside this layout.
-github_root: "${HOME}/github"
-
 repos:
   # -- Minimal example ------------------------------------------------------
   example-repo:
-    local_path: ${HOME}/github/your-org/example-repo
+    local_path: ${HOME}/github/example-org/example-repo
     deploy:
       kind: skip
       command: "echo 'example-repo deploy skipped: customize this block'"
 
   # -- Example with guards and docker-compose deploy ------------------------
   example-repo-with-deploy:
-    local_path: ${HOME}/github/your-org/example-repo-with-deploy
+    local_path: ${HOME}/github/example-org/example-repo-with-deploy
     deploy:
       kind: docker-compose
       command: "docker compose -f docker-compose.prod.yaml up -d --build"
@@ -44,14 +38,14 @@ repos:
   # green before either deploys.
   #
   # example-api:
-  #   local_path: ${HOME}/github/your-org/example-api
+  #   local_path: ${HOME}/github/example-org/example-api
   #   coupled_group: example-pair
   #   deploy:
   #     kind: docker-compose
   #     command: "docker compose -f api/docker-compose.yaml up -d --build"
   #
   # example-ui:
-  #   local_path: ${HOME}/github/your-org/example-ui
+  #   local_path: ${HOME}/github/example-org/example-ui
   #   coupled_group: example-pair
   #   deploy:
   #     kind: docker-compose

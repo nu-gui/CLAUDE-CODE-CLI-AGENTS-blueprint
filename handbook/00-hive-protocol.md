@@ -145,11 +145,41 @@ See `EVENTS_NDJSON_SPEC.md` § "Governance Enforcement Updates" for the full vio
 
 ## Recovery — when resuming a crashed session
 
-1. Read `~/.claude/context/hive/sessions/<SESSION_ID>/RESUME_PACKET.md`.
-2. Read `sessions/<SESSION_ID>/todo.yaml`.
-3. For each agent listed, read the last 10 entries of `agents/<agent>/checkpoints.ndjson`.
-4. Resume from the first `doing` or `todo` item.
-5. Before writing your first new checkpoint, emit a PROGRESS event with `detail:"resumed-from-<CP-ID>"` so the timeline reflects continuity.
+1. Read `~/.claude/context/hive/sessions/<SESSION_ID>/RESUME_PACKET.md`. This is the authoritative starting point — it identifies the last known agent, last checkpoint ID, and any pending TODOs left by the crashed session.
+
+2. Inspect `~/.claude/context/hive/events.ndjson` for the last events bearing this `SESSION_ID`:
+   ```bash
+   grep "\"sid\":\"<SESSION_ID>\"" ~/.claude/context/hive/events.ndjson | tail -20
+   ```
+   Identify which agent was mid-flight and what its last `PROGRESS` or `HANDOFF` event said. That determines your re-entry point.
+
+3. Re-emit a `SPAWN` event for the resumed agent with `"detail":"resumed sid=<SESSION_ID>"` so downstream tooling and SUP-00 audits see the recovery. Use `jq -n` to compose the JSON — it shell-escapes substituted variables safely (vs. raw `echo` which can produce malformed NDJSON if `<TASK>` etc. contain quotes or backslashes):
+   ```bash
+   jq -nc \
+     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --arg sid "<SESSION_ID>" \
+     --arg agent "<AGENT_ID>" \
+     --arg task "<TASK>" \
+     '{v:1, ts:$ts, sid:$sid, agent:$agent, event:"SPAWN", task:$task, detail:("resumed sid=" + $sid)}' \
+     >> ~/.claude/context/hive/events.ndjson
+   ```
+
+4. If the crashed agent had an in-flight PR, locate it and verify its state before retrying:
+   ```bash
+   gh pr list --search "<SESSION_ID>" --state open
+   ```
+   If the PR exists and is mergeable, reattach and continue from the last passing check. If it has conflicts or failed checks, resolve those before proceeding.
+
+5. Once the original work item completes, emit `COMPLETE` with `"detail":"recovery-from-crash"` to preserve the lifecycle audit trail (same `jq -n` pattern as step 3 — use it for any new event-emit recipes; the older `echo "{\"key\":\"$VAR\"}"` snippets earlier in this file are kept for compatibility but should be migrated when touched):
+   ```bash
+   jq -nc \
+     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --arg sid "<SESSION_ID>" \
+     --arg agent "<AGENT_ID>" \
+     --arg task "<TASK>" \
+     '{v:1, ts:$ts, sid:$sid, agent:$agent, event:"COMPLETE", task:$task, detail:"recovery-from-crash", outputs:[], exit_code:0}' \
+     >> ~/.claude/context/hive/events.ndjson
+   ```
 
 Never delete or rewrite old checkpoints. Append a new one saying "superseded by CP-XXX" if a recovery decision invalidates prior state.
 
